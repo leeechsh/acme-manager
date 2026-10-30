@@ -1,4 +1,4 @@
-# ACME Manager global preferences. Do not put API keys or SMTP passwords here.
+# ACME Manager global preferences. Keep this file mode 600.
 DEFAULT_CA="letsencrypt"
 DEFAULT_DNS="cloudflare"
 DEFAULT_KEY_TYPE="ec-256"
@@ -18,3 +18,4 @@ SMTP_USERNAME=""
 WEBDAV_ENABLED="false"
 WEBDAV_URL=""
 WEBDAV_USERNAME=""
+WEBDAV_PASSWORD=""

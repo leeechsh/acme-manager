@@ -153,12 +153,14 @@ cat >>"$ACME_MANAGER_CONFIG" <<'INJECT_WEBDAV'
 WEBDAV_ENABLED="true"
 WEBDAV_URL="https://dav.example.test/acme"
 WEBDAV_USERNAME="sync-user"
+WEBDAV_PASSWORD="sync#secret"
 INJECT_WEBDAV
-printf "export WEBDAV_PASSWORD='sync-secret'\n" >>"$ACME_HOME/account.conf"
+rm -f "$ACME_HOME/account.conf"
 "$ROOT/acme-manager.sh" webdav sync >/dev/null
 assert_contains "$FAKE_CURL_LOG" 'meta.json'
 assert_contains "$FAKE_CURL_LOG" 'interactive.example.com/cert.pem'
-! grep -Fq 'sync-secret' "$FAKE_CURL_LOG"
+! grep -Fq 'sync#secret' "$FAKE_CURL_LOG"
+[[ ! -e "$ACME_HOME/account.conf" ]]
 
 cat >"$TMP/agent.conf" <<EOF_AGENT
 WEBDAV_URL="https://dav.example.test/acme"

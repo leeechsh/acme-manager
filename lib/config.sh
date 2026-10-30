@@ -28,6 +28,7 @@ config_defaults() {
   WEBDAV_ENABLED='false'
   WEBDAV_URL=''
   WEBDAV_USERNAME=''
+  WEBDAV_PASSWORD=''
 }
 
 config_path_default() {
@@ -38,6 +39,37 @@ config_path_default() {
   else
     printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/acme-manager/config.conf"
   fi
+}
+
+config_strip_comment() {
+  local line="$1" output='' quote='' escaped=0 char index
+  for ((index=0; index<${#line}; index++)); do
+    char="${line:index:1}"
+    if (( escaped )); then
+      output+="$char"
+      escaped=0
+      continue
+    fi
+    if [[ -n "$quote" && "$char" == '\' ]]; then
+      output+="$char"
+      escaped=1
+      continue
+    fi
+    if [[ -n "$quote" ]]; then
+      [[ "$char" == "$quote" ]] && quote=''
+      output+="$char"
+      continue
+    fi
+    if [[ "$char" == "'" || "$char" == '"' ]]; then
+      quote="$char"
+      output+="$char"
+    elif [[ "$char" == '#' ]]; then
+      break
+    else
+      output+="$char"
+    fi
+  done
+  printf '%s\n' "$output"
 }
 
 config_load() {
@@ -51,7 +83,7 @@ config_load() {
   [[ -f "$CONFIG_FILE" ]] || return 0
   local line key value
   while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%%#*}"
+    line=$(config_strip_comment "$line")
     [[ "$line" =~ ^[[:space:]]*$ ]] && continue
     if [[ "$line" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)[[:space:]]*$ ]]; then
       key="${BASH_REMATCH[1]}"
@@ -59,7 +91,7 @@ config_load() {
       value="${value#\"}"; value="${value%\"}"
       value="${value#\'}"; value="${value%\'}"
       case "$key" in
-        DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME|WEBDAV_ENABLED|WEBDAV_URL|WEBDAV_USERNAME)
+        DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME|WEBDAV_ENABLED|WEBDAV_URL|WEBDAV_USERNAME|WEBDAV_PASSWORD)
           printf -v "$key" '%s' "$value" ;;
         CERT_DIR)
           if [[ "$value" == '/etc/ssl/acme' && -z "$env_cert_dir" && ${EUID:-$(id -u)} -eq 0 ]]; then
@@ -100,13 +132,17 @@ config_validate() {
   if [[ -n "$WEBDAV_URL" ]]; then
     [[ "$WEBDAV_URL" =~ ^https?://[^[:space:]]+$ ]] || { error 'WEBDAV_URL must start with http:// or https://'; return 1; }
   fi
+  [[ "$WEBDAV_PASSWORD" != *$'\n'* && "$WEBDAV_PASSWORD" != *$'\r'* && "$WEBDAV_PASSWORD" != *'"'* ]] || {
+    error 'WEBDAV_PASSWORD cannot contain newlines or double quotes'
+    return 1
+  }
 }
 
 config_write() {
   config_validate || return 1
   local file="${CONFIG_FILE:-$(config_path_default)}"
   atomic_write "$file" 600 <<EOF_CONF
-# ACME Manager global preferences. Secrets stay in acme.sh account.conf.
+# ACME Manager global preferences. Keep this file mode 600; it contains the WebDAV password.
 DEFAULT_CA="$DEFAULT_CA"
 DEFAULT_DNS="$DEFAULT_DNS"
 DEFAULT_KEY_TYPE="$DEFAULT_KEY_TYPE"
@@ -126,6 +162,7 @@ SMTP_USERNAME="$SMTP_USERNAME"
 WEBDAV_ENABLED="$WEBDAV_ENABLED"
 WEBDAV_URL="$WEBDAV_URL"
 WEBDAV_USERNAME="$WEBDAV_USERNAME"
+WEBDAV_PASSWORD="$WEBDAV_PASSWORD"
 EOF_CONF
   chmod 600 "$file"
   success "Config written to $file"

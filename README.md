@@ -109,12 +109,13 @@ WebDAV 同步默认关闭。可以在主菜单选择 `10 WebDAV synchronization`
 acme-manager webdav configure
 ```
 
-管理器配置文件保存 WebDAV 地址和用户名，WebDAV 密码保存到 acme.sh 原生账户文件中的 `WEBDAV_PASSWORD`，不会写入管理器配置或命令日志。配置示例：
+管理器配置文件 `/usr/local/acme-manager/etc/config.conf` 保存 WebDAV 地址、用户名和密码，文件权限为 `0600`。WebDAV 是管理器自有功能，因此不会把 `WEBDAV_PASSWORD` 写入 `.acme.sh/account.conf`。DNS API 凭据和 acme.sh 使用的 SMTP 凭据仍保存在 `.acme.sh/account.conf`，这是 acme.sh 插件的原生要求。配置示例：
 
 ```text
 WEBDAV_ENABLED="true"
 WEBDAV_URL="https://dav.example.com/acme-manager"
 WEBDAV_USERNAME="sync-user"
+WEBDAV_PASSWORD="webdav-password"
 ```
 
 部署完成后，管理器会先生成 `/var/cert/meta.json`，上传所有证书文件，最后上传 `meta.json`。WebDAV 远端布局如下：

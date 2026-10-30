@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 webdav_password() {
-  account_get_var WEBDAV_PASSWORD 2>/dev/null || true
+  printf '%s\n' "$WEBDAV_PASSWORD"
 }
 
 webdav_base_url() {
@@ -79,9 +79,11 @@ webdav_configure() {
   WEBDAV_USERNAME=$(prompt_value 'WebDAV username' "${WEBDAV_USERNAME:-}")
   local password
   password=$(prompt_value 'WebDAV password (empty keeps current password)') || return 1
-  [[ -n "$password" ]] && account_set_var WEBDAV_PASSWORD "$password"
+  [[ -n "$password" ]] && WEBDAV_PASSWORD="$password"
   config_write || return 1
-  chmod 600 "$(account_conf_path)"
+  if [[ -f "$(account_conf_path)" ]]; then
+    account_unset_var WEBDAV_PASSWORD >/dev/null 2>&1 || true
+  fi
   webdav_status
 }
 
@@ -126,7 +128,7 @@ webdav_menu() {
     menu_home_status
     ui_section 'Actions'
     ui_menu_item 1 'View WebDAV status' 'URL, account and connectivity settings'
-    ui_menu_item 2 'Configure WebDAV' 'Password is stored in the native account file'
+    ui_menu_item 2 'Configure WebDAV' 'Password is stored in the manager config'
     ui_menu_item 3 'Test WebDAV endpoint' 'Run an authenticated OPTIONS request'
     ui_menu_item 4 'Sync certificates now' 'Generate metadata, then upload files and metadata'
     ui_menu_item 0 'Back'
