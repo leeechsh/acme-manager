@@ -17,6 +17,21 @@ cert_issue_key_exists() {
   [[ -f "$ACME_HOME/${stem}${suffix}/${stem}.key" ]]
 }
 
+cert_remove_native_files() {
+  local domain="$1" stem path removed=0
+  stem="${domain#\*.}"
+  for path in "$ACME_HOME/$stem" "$ACME_HOME/${stem}_ecc"; do
+    [[ -d "$path" ]] || continue
+    rm -rf -- "$path"
+    removed=1
+  done
+  if (( removed )); then
+    info "Removed native acme.sh files for $stem"
+  else
+    ui_hint "No native acme.sh certificate directory found for $stem"
+  fi
+}
+
 cert_issue() {
   local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 force=0 wildcard=1 interactive=0 domains=() domain value
   while (($#)); do
@@ -168,6 +183,7 @@ cert_remove() {
     run_acme_logged revoke --revoke --domain "$domain" || { error 'Certificate revocation failed'; return 1; }
   fi
   run_acme_logged remove --remove --domain "$domain" || { error 'Certificate removal failed'; return 1; }
+  cert_remove_native_files "$domain"
   success "Certificate processed: $domain"
 }
 

@@ -79,6 +79,15 @@ assert_contains "$FAKE_LOG" '--issue --dns dns_tencent --server letsencrypt --do
 "$ROOT/acme-manager.sh" renew --domain example.com --force --key-type ec-256
 assert_contains "$FAKE_LOG" '--renew --domain example.com --ecc --force --home'
 
+printf 'account data\n' >"$ACME_HOME/account.conf"
+mkdir -p "$ACME_HOME/remove.example.com_ecc" "$ACME_HOME/remove.example.com"
+: >"$ACME_HOME/remove.example.com_ecc/remove.example.com.key"
+: >"$ACME_HOME/remove.example.com/remove.example.com.key"
+printf 'y\n' | "$ROOT/acme-manager.sh" remove --domain remove.example.com >/dev/null
+[[ ! -e "$ACME_HOME/remove.example.com_ecc" ]]
+[[ ! -e "$ACME_HOME/remove.example.com" ]]
+[[ -f "$ACME_HOME/account.conf" ]]
+
 "$ROOT/acme-manager.sh" deploy --domain example.com --target-dir "$TMP/certs/example.com" --reloadcmd 'true'
 assert_contains "$FAKE_LOG" '--install-cert -d example.com --ecc --key-file'
 assert_contains "$FAKE_LOG" 'example.com.key'
