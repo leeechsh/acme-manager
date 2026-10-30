@@ -130,7 +130,7 @@ main_menu() {
     menu_home_status
 
     ui_section 'Certificate Lifecycle'
-    ui_menu_item 1 'Issue certificate' 'Single domain / wildcard / multi-SAN'
+    ui_menu_item 1 'Issue certificate' 'Issue, then deploy automatically'
     ui_menu_item 2 'List certificates' 'Validity, CA and deployment paths'
     ui_menu_item 3 'Renew certificate' 'One certificate or all certificates'
     ui_menu_item 4 'Deploy certificate' 'Paths, permissions and reload hook'
@@ -150,7 +150,7 @@ main_menu() {
 
     menu_choice 'Choose an action [0-11]:' || break
     case "$MENU_CHOICE" in
-      1) cert_issue --interactive || true; pause_screen;;
+      1) cert_issue_and_deploy || true; pause_screen;;
       2) cert_list || true; pause_screen;;
       3)
         local domain

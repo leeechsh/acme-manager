@@ -98,8 +98,18 @@ cert_issue() {
     notify_event 'Issuance failed' "${domains[*]}" "CA=$ca DNS=$provider. See $(_log_file)." || true
     return 1
   fi
+  CERT_LAST_DOMAIN="${domains[0]}"
+  CERT_LAST_KEY_TYPE="$key_type"
   notify_event 'Issuance succeeded' "${domains[*]}" "CA=$ca DNS=$provider KEY=$key_type" || true
   success "Certificate issued: ${domains[*]}"
+}
+
+cert_issue_and_deploy() {
+  CERT_LAST_DOMAIN=''
+  CERT_LAST_KEY_TYPE=''
+  cert_issue --interactive || return 1
+  [[ -n "$CERT_LAST_DOMAIN" ]] || return 0
+  deploy_cert "$CERT_LAST_DOMAIN" "$CERT_LAST_KEY_TYPE"
 }
 
 cert_list() {
@@ -217,7 +227,7 @@ cert_menu() {
     menu_header 'Certificate Management' 'Manage the complete certificate lifecycle'
     menu_home_status
     ui_section 'Actions'
-    ui_menu_item 1 'Issue certificate' 'Single domain / wildcard / multi-SAN'
+    ui_menu_item 1 'Issue certificate' 'Issue, then deploy automatically'
     ui_menu_item 2 'List certificates' 'Validity, CA and deployment paths'
     ui_menu_item 3 'View certificate details' 'Read native acme.sh information'
     ui_menu_item 4 'Renew certificate' 'One certificate or all certificates'
@@ -228,7 +238,7 @@ cert_menu() {
     menu_choice 'Choose an action [0-6]:' || return 0
     local domain revoke
     case "$MENU_CHOICE" in
-      1) cert_issue --interactive || true; pause_screen;;
+      1) cert_issue_and_deploy || true; pause_screen;;
       2) cert_list || true; pause_screen;;
       3) domain=$(prompt_value 'Domain'); cert_info "$domain" || true; pause_screen;;
       4) domain=$(prompt_value 'Domain (leave empty to renew all)' ''); if [[ -n "$domain" ]]; then cert_renew --domain "$domain" || true; else cert_renew --all || true; fi; pause_screen;;

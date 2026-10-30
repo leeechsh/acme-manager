@@ -103,6 +103,12 @@ then
 fi
 [[ ! -e "$ACME_HOME/stale.example.com_ecc" ]]
 
+printf '1\ninteractive.example.com\n1\n1\n1\n\n\n\n\n\n\n0\n' |
+  "$ROOT/acme-manager.sh" menu >/dev/null
+assert_contains "$FAKE_LOG" '--issue --dns dns_cf --server letsencrypt --domain interactive.example.com --domain *.interactive.example.com --keylength ec-256 --home'
+assert_contains "$FAKE_LOG" '--install-cert -d interactive.example.com --ecc --key-file'
+[[ -f "$TMP/certs/interactive.example.com/interactive.example.com.key" ]]
+
 "$ROOT/acme-manager.sh" deploy --domain example.com --target-dir "$TMP/certs/example.com" --reloadcmd 'true'
 assert_contains "$FAKE_LOG" '--install-cert -d example.com --ecc --key-file'
 assert_contains "$FAKE_LOG" 'example.com.key'
