@@ -9,9 +9,9 @@ REPO_REF=${REPO_REF:-main}
 TMP_ROOT=
 SCRIPT_DIR=
 
-case "${0:-}" in
-  */*) SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || SCRIPT_DIR= ;;
-esac
+if [ -f "${0:-}" ]; then
+  SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || SCRIPT_DIR=
+fi
 
 # Installed copies remember their paths so `acme-manager update` also works
 # when the installation used a user-owned PREFIX and CONFIG_DIR.
@@ -33,18 +33,18 @@ LIB_LINK=$PREFIX/lib/acme-manager
 
 usage() {
   cat <<USAGE
-用法: install.sh [选项]
+Usage: install.sh [options]
 
-  --update              从 GitHub 下载最新代码并更新已安装版本
-  --uninstall           卸载管理器代码，保留配置和 acme.sh 数据
-  --repo owner/name     指定 GitHub 仓库
-  --ref branch|tag      指定 GitHub 分支或标签
+  --update              Download the latest code from GitHub and update the installation
+  --uninstall           Remove manager code while keeping config and acme.sh data
+  --repo owner/name     Use a different GitHub repository
+  --ref branch|tag      Use a different GitHub branch or tag
 
-环境变量:
-  PREFIX                安装前缀，默认 /usr/local
-  CONFIG_DIR            配置目录，默认 /etc/acme-manager
-  REPO_SLUG             GitHub 仓库，默认 $REPO_SLUG
-  REPO_REF              GitHub 分支或标签，默认 $REPO_REF
+Environment:
+  PREFIX                Installation prefix, default /usr/local
+  CONFIG_DIR            Config directory, default /etc/acme-manager
+  REPO_SLUG             GitHub repository, default $REPO_SLUG
+  REPO_REF              GitHub branch or tag, default $REPO_REF
 USAGE
 }
 
@@ -61,24 +61,24 @@ while [ "$#" -gt 0 ]; do
     --update) MODE=update; shift ;;
     --uninstall) MODE=uninstall; shift ;;
     --repo)
-      [ "$#" -ge 2 ] || { echo '--repo 需要 owner/name' >&2; exit 2; }
+      [ "$#" -ge 2 ] || { echo '--repo requires owner/name' >&2; exit 2; }
       REPO_SLUG=$2; shift 2 ;;
     --ref)
-      [ "$#" -ge 2 ] || { echo '--ref 需要分支或标签' >&2; exit 2; }
+      [ "$#" -ge 2 ] || { echo '--ref requires a branch or tag' >&2; exit 2; }
       REPO_REF=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "未知参数: $1" >&2; usage >&2; exit 2 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
 case "$REPO_SLUG" in
   */*) ;;
-  *) echo "仓库格式必须是 owner/name: $REPO_SLUG" >&2; exit 2 ;;
+  *) echo "Repository must use owner/name format: $REPO_SLUG" >&2; exit 2 ;;
 esac
 
 if [ "$MODE" = uninstall ]; then
   if [ "$(id -u)" -ne 0 ] && case "$PREFIX" in /usr/local*) true;; *) false;; esac; then
-    echo '卸载默认系统路径需要 root；用户目录请设置 PREFIX。' >&2
+    echo 'Removing the default system path requires root; set PREFIX for a user directory.' >&2
     exit 1
   fi
   rm -f "$BIN"
@@ -88,13 +88,13 @@ if [ "$MODE" = uninstall ]; then
     rm -rf "$LIB_LINK"
   fi
   rm -rf "$DEST"
-  echo "已卸载 ACME Manager；保留 $CONFIG_DIR 和 acme.sh 数据。"
+  echo "ACME Manager removed; $CONFIG_DIR and acme.sh data were kept."
   exit 0
 fi
 
 if [ "$(id -u)" -ne 0 ]; then
   case "$PREFIX" in
-    /usr/local*) echo '默认安装路径需要 root；可设置 PREFIX=$HOME/.local CONFIG_DIR=$HOME/.config/acme-manager。' >&2; exit 1 ;;
+    /usr/local*) echo 'The default installation path requires root; set PREFIX=$HOME/.local and CONFIG_DIR=$HOME/.config/acme-manager.' >&2; exit 1 ;;
   esac
 fi
 
@@ -102,23 +102,23 @@ SOURCE_DIR=
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/acme-manager.sh" ] && [ -d "$SCRIPT_DIR/lib" ] && [ "$MODE" = install ]; then
   SOURCE_DIR=$SCRIPT_DIR
 else
-  command -v curl >/dev/null 2>&1 || { echo '需要 curl 才能从 GitHub 安装或更新。' >&2; exit 1; }
-  command -v tar >/dev/null 2>&1 || { echo '需要 tar 才能从 GitHub 安装或更新。' >&2; exit 1; }
+  command -v curl >/dev/null 2>&1 || { echo 'curl is required to install or update from GitHub.' >&2; exit 1; }
+  command -v tar >/dev/null 2>&1 || { echo 'tar is required to install or update from GitHub.' >&2; exit 1; }
   TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/acme-manager.XXXXXX")
   ARCHIVE="$TMP_ROOT/source.tar.gz"
   URL="https://github.com/$REPO_SLUG/archive/refs/heads/$REPO_REF.tar.gz"
   case "$REPO_REF" in
     v*|[0-9]*) URL="https://github.com/$REPO_SLUG/archive/refs/tags/$REPO_REF.tar.gz" ;;
   esac
-  echo "下载 ACME Manager: $REPO_SLUG@$REPO_REF"
+  echo "Downloading ACME Manager: $REPO_SLUG@$REPO_REF"
   curl -fsSL "$URL" -o "$ARCHIVE"
   tar -xzf "$ARCHIVE" -C "$TMP_ROOT"
   SOURCE_DIR=$(find "$TMP_ROOT" -mindepth 1 -maxdepth 1 -type d -print -quit)
-  [ -n "$SOURCE_DIR" ] || { echo '下载内容中未找到项目目录。' >&2; exit 1; }
+  [ -n "$SOURCE_DIR" ] || { echo 'The downloaded archive did not contain a project directory.' >&2; exit 1; }
 fi
 
 [ -f "$SOURCE_DIR/acme-manager.sh" ] && [ -d "$SOURCE_DIR/lib" ] || {
-  echo "源目录不完整: $SOURCE_DIR" >&2
+  echo "Source directory is incomplete: $SOURCE_DIR" >&2
   exit 1
 }
 
@@ -141,11 +141,11 @@ if [ ! -e "$CONFIG_DIR/config.conf" ]; then
 fi
 
 if [ "$MODE" = update ]; then
-  echo "ACME Manager 已更新: $DEST"
+  echo "ACME Manager updated: $DEST"
 else
-  echo "ACME Manager 已安装到 $DEST"
+  echo "ACME Manager installed to $DEST"
 fi
-echo "命令链接: $BIN"
-echo "库目录链接: $LIB_LINK"
-echo "配置文件: $CONFIG_DIR/config.conf"
-echo '配置、账户、证书和 acme.sh Cron 不会因更新或卸载管理器代码而删除。'
+echo "Command link: $BIN"
+echo "Library link: $LIB_LINK"
+echo "Config file: $CONFIG_DIR/config.conf"
+echo 'Config, account data, certificates and the acme.sh Cron job are kept during manager updates and uninstall.'

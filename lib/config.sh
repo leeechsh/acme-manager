@@ -57,10 +57,10 @@ config_load() {
       case "$key" in
         DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|CERT_DIR|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME)
           printf -v "$key" '%s' "$value" ;;
-        *) warn "忽略未允许的配置项: $key" ;;
+        *) warn "Ignoring unknown config key: $key" ;;
       esac
     else
-      warn "忽略无法解析的配置行: $line"
+      warn "Ignoring malformed config line: $line"
     fi
   done <"$CONFIG_FILE"
   [[ -n "$env_acme_home" ]] && ACME_HOME="$env_acme_home"
@@ -70,17 +70,17 @@ config_load() {
 }
 
 config_validate() {
-  valid_choice "$DEFAULT_CA" letsencrypt zerossl || { error 'DEFAULT_CA 必须是 letsencrypt 或 zerossl'; return 1; }
-  valid_choice "$DEFAULT_DNS" cloudflare dnspod aliyun || { error 'DEFAULT_DNS 必须是 cloudflare、dnspod 或 aliyun'; return 1; }
-  valid_choice "$DEFAULT_KEY_TYPE" ec-256 rsa-2048 rsa-3072 rsa-4096 || { error 'DEFAULT_KEY_TYPE 无效'; return 1; }
-  valid_bool "$AUTO_RENEW" || { error 'AUTO_RENEW 必须是 true 或 false'; return 1; }
-  valid_bool "$NOTIFY_ENABLED" || { error 'NOTIFY_ENABLED 必须是 true 或 false'; return 1; }
-  [[ "$NOTIFY_LEVEL" =~ ^[0-3]$ ]] || { error 'NOTIFY_LEVEL 必须是 0-3'; return 1; }
-  [[ "$EXPIRY_DAYS" =~ ^[0-9]+$ ]] || { error 'EXPIRY_DAYS 必须是非负整数'; return 1; }
-  valid_choice "$SMTP_SECURE" none tls ssl || { error 'SMTP_SECURE 必须是 none、tls 或 ssl'; return 1; }
-  valid_abs_path "$CERT_DIR" || { error 'CERT_DIR 必须是绝对路径'; return 1; }
-  valid_abs_path "$LOG_DIR" || { error 'LOG_DIR 必须是绝对路径'; return 1; }
-  valid_abs_path "$ACME_HOME" || { error 'ACME_HOME 必须是绝对路径'; return 1; }
+  valid_choice "$DEFAULT_CA" letsencrypt zerossl || { error 'DEFAULT_CA must be letsencrypt or zerossl'; return 1; }
+  valid_choice "$DEFAULT_DNS" cloudflare dnspod aliyun || { error 'DEFAULT_DNS must be cloudflare, dnspod or aliyun'; return 1; }
+  valid_choice "$DEFAULT_KEY_TYPE" ec-256 rsa-2048 rsa-3072 rsa-4096 || { error 'DEFAULT_KEY_TYPE is invalid'; return 1; }
+  valid_bool "$AUTO_RENEW" || { error 'AUTO_RENEW must be true or false'; return 1; }
+  valid_bool "$NOTIFY_ENABLED" || { error 'NOTIFY_ENABLED must be true or false'; return 1; }
+  [[ "$NOTIFY_LEVEL" =~ ^[0-3]$ ]] || { error 'NOTIFY_LEVEL must be 0-3'; return 1; }
+  [[ "$EXPIRY_DAYS" =~ ^[0-9]+$ ]] || { error 'EXPIRY_DAYS must be a non-negative integer'; return 1; }
+  valid_choice "$SMTP_SECURE" none tls ssl || { error 'SMTP_SECURE must be none, tls or ssl'; return 1; }
+  valid_abs_path "$CERT_DIR" || { error 'CERT_DIR must be an absolute path'; return 1; }
+  valid_abs_path "$LOG_DIR" || { error 'LOG_DIR must be an absolute path'; return 1; }
+  valid_abs_path "$ACME_HOME" || { error 'ACME_HOME must be an absolute path'; return 1; }
 }
 
 config_write() {
@@ -106,7 +106,7 @@ SMTP_TO="$SMTP_TO"
 SMTP_USERNAME="$SMTP_USERNAME"
 EOF_CONF
   chmod 600 "$file"
-  success "配置已写入 $file"
+  success "Config written to $file"
 }
 
 config_ensure_dirs() {
@@ -118,18 +118,18 @@ config_ensure_dirs() {
 }
 
 config_show() {
-  printf '配置文件: %s\n' "$CONFIG_FILE"
-  printf 'ACME_HOME: %s\n证书目录: %s\n日志目录: %s\n' "$ACME_HOME" "$CERT_DIR" "$LOG_DIR"
-  printf '默认 CA: %s\n默认 DNS: %s\n默认密钥: %s\n' "$DEFAULT_CA" "$DEFAULT_DNS" "$DEFAULT_KEY_TYPE"
-  printf '自动续期: %s\n通知: %s (级别 %s)\n过期提醒: %s 天\n' "$AUTO_RENEW" "$NOTIFY_ENABLED" "$NOTIFY_LEVEL" "$EXPIRY_DAYS"
-  printf 'SMTP: %s:%s (%s), from=%s, to=%s\n' "${SMTP_HOST:-未配置}" "${SMTP_PORT:-默认}" "$SMTP_SECURE" "${SMTP_FROM:-未配置}" "${SMTP_TO:-未配置}"
+  printf 'Config file: %s\n' "$CONFIG_FILE"
+  printf 'ACME_HOME: %s\nCertificate directory: %s\nLog directory: %s\n' "$ACME_HOME" "$CERT_DIR" "$LOG_DIR"
+  printf 'Default CA: %s\nDefault DNS: %s\nDefault key type: %s\n' "$DEFAULT_CA" "$DEFAULT_DNS" "$DEFAULT_KEY_TYPE"
+  printf 'Auto renewal: %s\nNotifications: %s (level %s)\nExpiry reminder: %s days\n' "$AUTO_RENEW" "$NOTIFY_ENABLED" "$NOTIFY_LEVEL" "$EXPIRY_DAYS"
+  printf 'SMTP: %s:%s (%s), from=%s, to=%s\n' "${SMTP_HOST:-not configured}" "${SMTP_PORT:-default}" "$SMTP_SECURE" "${SMTP_FROM:-not configured}" "${SMTP_TO:-not configured}"
 }
 
 config_doctor() {
   local rc=0
   config_validate || rc=1
-  [[ -r "$CONFIG_FILE" && "$(stat -c '%a' "$CONFIG_FILE" 2>/dev/null || stat -f '%Lp' "$CONFIG_FILE" 2>/dev/null)" =~ ^(600|640|644)$ ]] || { warn "配置文件不可读或权限异常: $CONFIG_FILE"; rc=1; }
-  [[ -d "$ACME_HOME" ]] || { warn "ACME_HOME 不存在: $ACME_HOME"; rc=1; }
-  [[ -d "$CERT_DIR" ]] || { warn "证书目录不存在: $CERT_DIR"; rc=1; }
+  [[ -r "$CONFIG_FILE" && "$(stat -c '%a' "$CONFIG_FILE" 2>/dev/null || stat -f '%Lp' "$CONFIG_FILE" 2>/dev/null)" =~ ^(600|640|644)$ ]] || { warn "Config file is unreadable or has unsafe permissions: $CONFIG_FILE"; rc=1; }
+  [[ -d "$ACME_HOME" ]] || { warn "ACME_HOME does not exist: $ACME_HOME"; rc=1; }
+  [[ -d "$CERT_DIR" ]] || { warn "Certificate directory does not exist: $CERT_DIR"; rc=1; }
   return "$rc"
 }

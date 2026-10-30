@@ -49,7 +49,7 @@ ui_clear() {
 
 ui_title() {
   local title="$1" subtitle="${2:-}"
-  printf '\n%s%s%s %s%s%s\n' "$UI_PRIMARY" "$UI_BOLD" "$title" "$UI_RESET" "$UI_MUTED" "$subtitle"
+  printf '\n%s%s%s %s%s%s%s\n' "$UI_PRIMARY" "$UI_BOLD" "$title" "$UI_RESET" "$UI_MUTED" "$subtitle" "$UI_RESET"
   ui_rule "$(ui_width)" '-'
 }
 
@@ -59,24 +59,33 @@ ui_section() {
 
 ui_menu_item() {
   local number="$1" title="$2" description="${3:-}"
-  printf '  %s%s%2s%s  %s%s%s' "$UI_PRIMARY" "$UI_BOLD" "$number" "$UI_RESET" "$UI_BOLD" "$title" "$UI_RESET"
-  [[ -n "$description" ]] && printf ' %s%s%s' "$UI_MUTED" "$description" "$UI_RESET"
+  printf '  %s%s%2s%s  %s%-26s%s' "$UI_PRIMARY" "$UI_BOLD" "$number" "$UI_RESET" "$UI_BOLD" "$title" "$UI_RESET"
+  [[ -n "$description" ]] && printf '%s%s%s' "$UI_MUTED" "$description" "$UI_RESET"
   printf '\n'
 }
 
 ui_footer() {
-  printf '\n%s%s%s\n' "$UI_MUTED" "${1:-0 返回 · Ctrl+C 退出}" "$UI_RESET"
+  printf '\n%s%s%s\n' "$UI_MUTED" "${1:-0 Back · Ctrl+C Exit}" "$UI_RESET"
 }
 
 ui_status_strip() {
   printf '%s[%sCA%s] %s%s%s  %s[%sDNS%s] %s%s%s  %s[%sKEY%s] %s%s%s\n' \
-    "$UI_PRIMARY" "$UI_RESET" "$UI_PRIMARY" "$UI_BOLD" "$1" "$UI_RESET" \
-    "$UI_PRIMARY" "$UI_RESET" "$UI_PRIMARY" "$UI_BOLD" "$2" "$UI_RESET" \
-    "$UI_PRIMARY" "$UI_RESET" "$UI_PRIMARY" "$UI_BOLD" "$3" "$UI_RESET"
+    "$UI_PRIMARY" "$UI_BOLD" "$UI_RESET" "$UI_PRIMARY$UI_BOLD" "$1" "$UI_RESET" \
+    "$UI_PRIMARY" "$UI_BOLD" "$UI_RESET" "$UI_PRIMARY$UI_BOLD" "$2" "$UI_RESET" \
+    "$UI_PRIMARY" "$UI_BOLD" "$UI_RESET" "$UI_PRIMARY$UI_BOLD" "$3" "$UI_RESET"
 }
 
 ui_hint() {
   printf '%s%s%s\n' "$UI_DIM" "$1" "$UI_RESET"
+}
+
+ui_table() {
+  local input="$1"
+  if command_exists column; then
+    printf '%s\n' "$input" | column -t -s $'\t'
+  else
+    printf '%s\n' "$input"
+  fi
 }
 
 _now() { date '+%Y-%m-%d %H:%M:%S'; }
@@ -119,7 +128,7 @@ is_tty() { [[ -t 0 && -t 1 ]]; }
 
 pause_screen() {
   if is_tty; then
-    printf '\n%s%sEnter%s 返回上一层  ·  %sCtrl+C%s 退出\n' "$UI_MUTED" "$UI_BOLD" "$UI_RESET" "$UI_BOLD" "$UI_RESET"
+    printf '\n%s%sEnter%s Back  ·  %sCtrl+C%s Exit\n' "$UI_MUTED" "$UI_BOLD" "$UI_RESET" "$UI_BOLD" "$UI_RESET"
     read -r _ || true
   fi
 }
@@ -191,7 +200,7 @@ ensure_acme() {
     export ACME_SH_BIN
     return 0
   fi
-  error '未找到 acme.sh。请先安装 acme.sh，或设置 ACME_SH_BIN。'
+  error 'acme.sh was not found. Install it first or set ACME_SH_BIN.'
   return 1
 }
 
@@ -249,8 +258,8 @@ account_get_var() {
 
 account_set_var() {
   local key="$1" value="$2" file tmp line found=0 quoted
-  [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { error "非法配置键: $key"; return 1; }
-  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || { error '配置值不能包含换行'; return 1; }
+  [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { error "Invalid config key: $key"; return 1; }
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || { error 'Config values cannot contain newlines'; return 1; }
   ensure_account_conf
   file=$(account_conf_path)
   tmp=$(mktemp "${file}.tmp.XXXXXX") || return 1
