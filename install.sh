@@ -2,13 +2,33 @@
 # POSIX bootstrap installer. It is intentionally usable as: curl .../install.sh | sh
 set -eu
 
-PREFIX=${PREFIX:-/usr/local}
-DEST=$PREFIX/lib/acme-manager
-BIN=$PREFIX/bin/acme-manager
-CONFIG_DIR=${CONFIG_DIR:-/etc/acme-manager}
+PREFIX=${PREFIX:-}
+CONFIG_DIR=${CONFIG_DIR:-}
 REPO_SLUG=${REPO_SLUG:-leeechsh/acme-manager}
 REPO_REF=${REPO_REF:-main}
 TMP_ROOT=
+SCRIPT_DIR=
+
+case "${0:-}" in
+  */*) SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || SCRIPT_DIR= ;;
+esac
+
+# Installed copies remember their paths so `acme-manager update` also works
+# when the installation used a user-owned PREFIX and CONFIG_DIR.
+if [ -z "$PREFIX" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/.install-meta" ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in
+      PREFIX) PREFIX=$value ;;
+      CONFIG_DIR) CONFIG_DIR=$value ;;
+      REPO_SLUG) REPO_SLUG=$value ;;
+    esac
+  done <"$SCRIPT_DIR/.install-meta"
+fi
+
+PREFIX=${PREFIX:-/usr/local}
+CONFIG_DIR=${CONFIG_DIR:-/etc/acme-manager}
+DEST=$PREFIX/lib/acme-manager
+BIN=$PREFIX/bin/acme-manager
 
 usage() {
   cat <<USAGE
@@ -72,11 +92,6 @@ if [ "$(id -u)" -ne 0 ]; then
   esac
 fi
 
-SCRIPT_DIR=
-case "${0:-}" in
-  */*) SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || SCRIPT_DIR= ;;
-esac
-
 SOURCE_DIR=
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/acme-manager.sh" ] && [ -d "$SCRIPT_DIR/lib" ] && [ "$MODE" = install ]; then
   SOURCE_DIR=$SCRIPT_DIR
@@ -105,6 +120,9 @@ mkdir -p "$DEST" "$PREFIX/bin" "$CONFIG_DIR"
 cp -R "$SOURCE_DIR/acme-manager.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR/lib" "$SOURCE_DIR/config.conf.example" "$DEST/"
 chmod 755 "$DEST/acme-manager.sh" "$DEST/install.sh" "$DEST/lib"/*.sh
 ln -sfn "$DEST/acme-manager.sh" "$BIN"
+printf 'PREFIX=%s\nCONFIG_DIR=%s\nREPO_SLUG=%s\nREPO_REF=%s\n' \
+  "$PREFIX" "$CONFIG_DIR" "$REPO_SLUG" "$REPO_REF" >"$DEST/.install-meta"
+chmod 600 "$DEST/.install-meta"
 
 if [ ! -e "$CONFIG_DIR/config.conf" ]; then
   cp "$DEST/config.conf.example" "$CONFIG_DIR/config.conf"
