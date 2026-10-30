@@ -203,6 +203,7 @@ cert_remove() {
     error 'Certificate removal failed; local native files were cleaned'
     return "$remove_rc"
   fi
+  meta_sync || warn 'Certificate metadata/WebDAV synchronization failed after removal'
   success "Certificate processed: $domain"
 }
 

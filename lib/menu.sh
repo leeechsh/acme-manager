@@ -143,12 +143,13 @@ main_menu() {
     ui_menu_item 9 'Email notifications' 'SMTP configuration and test email'
 
     ui_section 'Maintenance'
-    ui_menu_item 10 'Logs & diagnostics' 'View logs and run doctor'
-    ui_menu_item 11 'Settings / update' 'Defaults and acme.sh maintenance'
+    ui_menu_item 10 'WebDAV synchronization' 'Upload certificates and metadata'
+    ui_menu_item 11 'Logs & diagnostics' 'View logs and run doctor'
+    ui_menu_item 12 'Settings / update' 'Defaults and acme.sh maintenance'
     ui_menu_item 0 'Exit' 'Return to the shell'
     ui_footer 'Enter a number to choose  ·  Credentials are never printed to logs'
 
-    menu_choice 'Choose an action [0-11]:' || break
+    menu_choice 'Choose an action [0-12]:' || break
     case "$MENU_CHOICE" in
       1) cert_issue_and_deploy || true; pause_screen;;
       2) cert_list || true; pause_screen;;
@@ -187,8 +188,9 @@ main_menu() {
         pause_screen
         ;;
       9) notify_menu || true;;
-      10) menu_logs; menu_doctor || true; pause_screen;;
-      11) menu_global || true;;
+      10) webdav_menu || true;;
+      11) menu_logs; menu_doctor || true; pause_screen;;
+      12) menu_global || true;;
       0) break;;
       *) warn 'Invalid choice; enter 0-11';;
     esac

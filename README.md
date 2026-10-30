@@ -8,6 +8,8 @@ ACME Manager 是一个 Bash 数字菜单和 CLI 管理层，复用 [acme.sh](htt
 - 单域名、泛域名、多 SAN；ECC P-256 和 RSA 2048/3072/4096
 - 证书列表、详情、签发、续期、部署、删除、可选撤销和过期检查
 - `--install-cert` 自定义路径以及受控 Reload Hook
+- 部署后生成 `/var/cert/meta.json`，并可将证书目录和元数据上传到 WebDAV
+- 提供独立的 `acme-agent`，其它设备先拉取元数据，变化后再原子更新证书目录
 - DNS 凭据隐藏输入并写入 acme.sh 原生 `account.conf`，文件权限为 `0600`
 - SMTP 配置复用 acme.sh notify hook；配置和测试命令不会把密码写入管理器配置或日志
 - acme.sh 原生 Cron 安装/检查/移除，不创建第二套调度器
@@ -42,6 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/leeechsh/acme-manager/main/install.
 
 ```text
 /usr/local/bin/acme-manager -> /usr/local/acme-manager/acme-manager.sh
+/usr/local/bin/acme-agent -> /usr/local/acme-manager/acme-agent.sh
 /usr/local/lib/acme-manager -> /usr/local/acme-manager/
 ```
 
@@ -71,6 +74,8 @@ acme-manager dns status cloudflare
 acme-manager notify configure
 acme-manager cron install
 acme-manager doctor
+acme-manager webdav status
+acme-manager webdav sync
 ```
 
 root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生成：
@@ -95,6 +100,63 @@ root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生�
 续期事件由 acme.sh 原生 notify hook 处理；签发、部署和手动续期的补充通知使用本机 `curl` 的 SMTP 支持发送。未配置 SMTP 或缺少 `curl` 时，操作本身仍会完成，但日志会记录通知失败。
 
 DNS 凭据使用 acme.sh 插件原生变量：Cloudflare 为 `CF_Token`，腾讯云 DNSPod 为 `Tencent_SecretId` / `Tencent_SecretKey`，阿里云为 `Ali_Key` / `Ali_Secret`。可选的临时令牌和区域参数也会写入同一个 `account.conf`。
+
+## WebDAV 同步
+
+WebDAV 同步默认关闭。可以在主菜单选择 `10 WebDAV synchronization`，或执行：
+
+```bash
+acme-manager webdav configure
+```
+
+管理器配置文件保存 WebDAV 地址和用户名，WebDAV 密码保存到 acme.sh 原生账户文件中的 `WEBDAV_PASSWORD`，不会写入管理器配置或命令日志。配置示例：
+
+```text
+WEBDAV_ENABLED="true"
+WEBDAV_URL="https://dav.example.com/acme-manager"
+WEBDAV_USERNAME="sync-user"
+```
+
+部署完成后，管理器会先生成 `/var/cert/meta.json`，上传所有证书文件，最后上传 `meta.json`。WebDAV 远端布局如下：
+
+```text
+<WebDAV URL>/meta.json
+<WebDAV URL>/<domain>/cert.pem
+<WebDAV URL>/<domain>/privkey.pem
+<WebDAV URL>/<domain>/fullchain.pem
+<WebDAV URL>/<domain>/ca.pem
+<WebDAV URL>/<domain>/<domain>.key
+<WebDAV URL>/<domain>/<domain>.pem
+```
+
+`meta.json` 包含域名、证书目录、密钥类型、CA、签发时间、过期时间和 SHA-256 指纹，不包含私钥内容。acme.sh 自动续期时，部署 Reload Hook 也会重新生成并上传元数据。
+
+## 证书 Agent
+
+安装包同时提供不依赖 acme.sh 的 `acme-agent`。在其它设备上配置 `/usr/local/acme-manager/etc/agent.conf`：
+
+```text
+WEBDAV_URL="https://dav.example.com/acme-manager"
+WEBDAV_USERNAME="sync-user"
+WEBDAV_PASSWORD="webdav-password"
+TARGET_DIR="/var/cert"
+RELOAD_CMD="systemctl reload nginx"
+CRON_SCHEDULE="*/5 * * * *"
+```
+
+手动同步一次：
+
+```bash
+sudo acme-agent sync
+```
+
+安装每 5 分钟执行一次的 Cron：
+
+```bash
+sudo acme-agent cron install
+```
+
+Agent 先下载并比较 `meta.json`。元数据没有变化时不会下载证书；发生变化时，先下载到临时目录，全部必需文件成功后再替换目标域名目录，最后执行 `RELOAD_CMD`。
 
 ## 配置
 

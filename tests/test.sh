@@ -40,7 +40,36 @@ case " $* " in
 esac
 FAKE
 chmod 700 "$FAKE"
+mkdir -p "$TMP/bin"
+FAKE_CURL="$TMP/bin/curl"
+cat >"$FAKE_CURL" <<'FAKE_CURL'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "${FAKE_CURL_LOG:?}"
+args=("$@")
+output=''
+url=''
+for index in "${!args[@]}"; do
+  if [[ "${args[index]}" == '-o' && $((index + 1)) -lt ${#args[@]} ]]; then
+    output="${args[index+1]}"
+  fi
+done
+url="${args[${#args[@]}-1]}"
+if [[ -n "$output" && "$output" != /dev/null ]]; then
+  if [[ "$url" == */meta.json && -n "${AGENT_REMOTE_META:-}" ]]; then
+    cp "$AGENT_REMOTE_META" "$output"
+  else
+    printf 'fake remote file\n' >"$output"
+  fi
+fi
+if [[ " $* " == *' -w '* ]]; then
+  printf '201'
+fi
+FAKE_CURL
+chmod 700 "$FAKE_CURL"
 export FAKE_LOG="$TMP/acme.log"
+export FAKE_CURL_LOG="$TMP/curl.log"
+export PATH="$TMP/bin:$PATH"
 export ACME_MANAGER_CONFIG="$TMP/config.conf"
 export ACME_MANAGER_CERT_DIR="$TMP/certs"
 export ACME_MANAGER_LOG_DIR="$TMP/log"
@@ -108,6 +137,8 @@ printf '1\ninteractive.example.com\n1\n1\n1\n\n\n\n\n\n\n0\n' |
 assert_contains "$FAKE_LOG" '--issue --dns dns_cf --server letsencrypt --domain interactive.example.com --domain *.interactive.example.com --keylength ec-256 --home'
 assert_contains "$FAKE_LOG" '--install-cert -d interactive.example.com --ecc --key-file'
 [[ -f "$TMP/certs/interactive.example.com/interactive.example.com.key" ]]
+[[ -f "$TMP/certs/meta.json" ]]
+grep -Fq '"domain": "interactive.example.com"' "$TMP/certs/meta.json"
 
 "$ROOT/acme-manager.sh" deploy --domain example.com --target-dir "$TMP/certs/example.com" --reloadcmd 'true'
 assert_contains "$FAKE_LOG" '--install-cert -d example.com --ecc --key-file'
@@ -117,6 +148,29 @@ assert_contains "$FAKE_LOG" 'example.com.pem'
 [[ -f "$TMP/certs/example.com/example.com.pem" ]]
 cmp "$TMP/certs/example.com/privkey.pem" "$TMP/certs/example.com/example.com.key"
 cmp "$TMP/certs/example.com/fullchain.pem" "$TMP/certs/example.com/example.com.pem"
+
+cat >>"$ACME_MANAGER_CONFIG" <<'INJECT_WEBDAV'
+WEBDAV_ENABLED="true"
+WEBDAV_URL="https://dav.example.test/acme"
+WEBDAV_USERNAME="sync-user"
+INJECT_WEBDAV
+printf "export WEBDAV_PASSWORD='sync-secret'\n" >>"$ACME_HOME/account.conf"
+"$ROOT/acme-manager.sh" webdav sync >/dev/null
+assert_contains "$FAKE_CURL_LOG" 'meta.json'
+assert_contains "$FAKE_CURL_LOG" 'interactive.example.com/cert.pem'
+! grep -Fq 'sync-secret' "$FAKE_CURL_LOG"
+
+cat >"$TMP/agent.conf" <<EOF_AGENT
+WEBDAV_URL="https://dav.example.test/acme"
+WEBDAV_USERNAME="sync-user"
+WEBDAV_PASSWORD="sync-secret"
+TARGET_DIR="$TMP/agent-certs"
+AGENT_LOG="$TMP/agent.log"
+EOF_AGENT
+AGENT_REMOTE_META="$TMP/certs/meta.json" ACME_AGENT_CONFIG="$TMP/agent.conf" \
+  "$ROOT/acme-agent.sh" sync >/dev/null
+[[ -f "$TMP/agent-certs/meta.json" ]]
+[[ -f "$TMP/agent-certs/interactive.example.com/fullchain.pem" ]]
 
 "$ROOT/acme-manager.sh" dns configure cloudflare <<'INPUT'
 token-value
@@ -130,13 +184,18 @@ assert_contains "$ACME_HOME/account.conf" "export CF_Token='token-value'"
 
 PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" >/dev/null
 [[ -f "$TMP/prefix/acme-manager/acme-manager.sh" ]]
+[[ -f "$TMP/prefix/acme-manager/acme-agent.sh" ]]
 [[ -L "$TMP/prefix/bin/acme-manager" ]]
 [[ "$(readlink "$TMP/prefix/bin/acme-manager")" == "$TMP/prefix/acme-manager/acme-manager.sh" ]]
+[[ -L "$TMP/prefix/bin/acme-agent" ]]
+[[ "$(readlink "$TMP/prefix/bin/acme-agent")" == "$TMP/prefix/acme-manager/acme-agent.sh" ]]
 [[ -L "$TMP/prefix/lib/acme-manager" ]]
 [[ "$(readlink "$TMP/prefix/lib/acme-manager")" == "$TMP/prefix/acme-manager" ]]
+[[ -f "$TMP/config/agent.conf" ]]
 PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" --uninstall >/dev/null
 [[ ! -e "$TMP/prefix/acme-manager" ]]
 [[ ! -e "$TMP/prefix/bin/acme-manager" ]]
+[[ ! -e "$TMP/prefix/bin/acme-agent" ]]
 
 PREFIX="$TMP/prefix-default" sh "$ROOT/install.sh" >/dev/null
 [[ -f "$TMP/prefix-default/acme-manager/etc/config.conf" ]]

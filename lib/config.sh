@@ -25,6 +25,9 @@ config_defaults() {
   SMTP_FROM=''
   SMTP_TO=''
   SMTP_USERNAME=''
+  WEBDAV_ENABLED='false'
+  WEBDAV_URL=''
+  WEBDAV_USERNAME=''
 }
 
 config_path_default() {
@@ -56,7 +59,7 @@ config_load() {
       value="${value#\"}"; value="${value%\"}"
       value="${value#\'}"; value="${value%\'}"
       case "$key" in
-        DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME)
+        DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME|WEBDAV_ENABLED|WEBDAV_URL|WEBDAV_USERNAME)
           printf -v "$key" '%s' "$value" ;;
         CERT_DIR)
           if [[ "$value" == '/etc/ssl/acme' && -z "$env_cert_dir" && ${EUID:-$(id -u)} -eq 0 ]]; then
@@ -93,6 +96,10 @@ config_validate() {
   valid_abs_path "$CERT_DIR" || { error 'CERT_DIR must be an absolute path'; return 1; }
   valid_abs_path "$LOG_DIR" || { error 'LOG_DIR must be an absolute path'; return 1; }
   valid_abs_path "$ACME_HOME" || { error 'ACME_HOME must be an absolute path'; return 1; }
+  valid_bool "$WEBDAV_ENABLED" || { error 'WEBDAV_ENABLED must be true or false'; return 1; }
+  if [[ -n "$WEBDAV_URL" ]]; then
+    [[ "$WEBDAV_URL" =~ ^https?://[^[:space:]]+$ ]] || { error 'WEBDAV_URL must start with http:// or https://'; return 1; }
+  fi
 }
 
 config_write() {
@@ -116,6 +123,9 @@ SMTP_SECURE="$SMTP_SECURE"
 SMTP_FROM="$SMTP_FROM"
 SMTP_TO="$SMTP_TO"
 SMTP_USERNAME="$SMTP_USERNAME"
+WEBDAV_ENABLED="$WEBDAV_ENABLED"
+WEBDAV_URL="$WEBDAV_URL"
+WEBDAV_USERNAME="$WEBDAV_USERNAME"
 EOF_CONF
   chmod 600 "$file"
   success "Config written to $file"
@@ -135,6 +145,7 @@ config_show() {
   printf 'Default CA: %s\nDefault DNS: %s\nDefault key type: %s\n' "$DEFAULT_CA" "$DEFAULT_DNS" "$DEFAULT_KEY_TYPE"
   printf 'Auto renewal: %s\nNotifications: %s (level %s)\nExpiry reminder: %s days\n' "$AUTO_RENEW" "$NOTIFY_ENABLED" "$NOTIFY_LEVEL" "$EXPIRY_DAYS"
   printf 'SMTP: %s:%s (%s), from=%s, to=%s\n' "${SMTP_HOST:-not configured}" "${SMTP_PORT:-default}" "$SMTP_SECURE" "${SMTP_FROM:-not configured}" "${SMTP_TO:-not configured}"
+  printf 'WebDAV: %s, url=%s, username=%s\n' "$WEBDAV_ENABLED" "${WEBDAV_URL:-not configured}" "${WEBDAV_USERNAME:-not configured}"
 }
 
 config_doctor() {

@@ -35,6 +35,7 @@ if [ "$CONFIG_DIR_FROM_META" -eq 1 ] && [ "$CONFIG_DIR" = "/etc/acme-manager" ] 
 fi
 DEST=$PREFIX/acme-manager
 BIN=$PREFIX/bin/acme-manager
+AGENT_BIN=$PREFIX/bin/acme-agent
 LIB_LINK=$PREFIX/lib/acme-manager
 
 usage() {
@@ -88,6 +89,7 @@ if [ "$MODE" = uninstall ]; then
     exit 1
   fi
   rm -f "$BIN"
+  rm -f "$AGENT_BIN"
   if [ -L "$LIB_LINK" ]; then
     rm -f "$LIB_LINK"
   elif [ -d "$LIB_LINK" ] && [ "$LIB_LINK" != "$DEST" ]; then
@@ -129,9 +131,10 @@ fi
 }
 
 mkdir -p "$DEST" "$PREFIX/bin" "$CONFIG_DIR"
-cp -R "$SOURCE_DIR/acme-manager.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR/lib" "$SOURCE_DIR/config.conf.example" "$DEST/"
-chmod 755 "$DEST/acme-manager.sh" "$DEST/install.sh" "$DEST/lib"/*.sh
+cp -R "$SOURCE_DIR/acme-manager.sh" "$SOURCE_DIR/acme-agent.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR/lib" "$SOURCE_DIR/config.conf.example" "$SOURCE_DIR/agent.conf.example" "$DEST/"
+chmod 755 "$DEST/acme-manager.sh" "$DEST/acme-agent.sh" "$DEST/install.sh" "$DEST/lib"/*.sh
 ln -sfn "$DEST/acme-manager.sh" "$BIN"
+ln -sfn "$DEST/acme-agent.sh" "$AGENT_BIN"
 if [ -e "$LIB_LINK" ] && [ ! -L "$LIB_LINK" ] && [ "$LIB_LINK" != "$DEST" ]; then
   rm -rf "$LIB_LINK"
 fi
@@ -145,6 +148,10 @@ if [ ! -e "$CONFIG_DIR/config.conf" ]; then
   cp "$DEST/config.conf.example" "$CONFIG_DIR/config.conf"
   chmod 600 "$CONFIG_DIR/config.conf"
 fi
+if [ ! -e "$CONFIG_DIR/agent.conf" ]; then
+  cp "$DEST/agent.conf.example" "$CONFIG_DIR/agent.conf"
+  chmod 600 "$CONFIG_DIR/agent.conf"
+fi
 
 if [ "$MODE" = update ]; then
   echo "ACME Manager updated: $DEST"
@@ -152,6 +159,7 @@ else
   echo "ACME Manager installed to $DEST"
 fi
 echo "Command link: $BIN"
+echo "Agent link: $AGENT_BIN"
 echo "Library link: $LIB_LINK"
 echo "Config file: $CONFIG_DIR/config.conf"
 echo 'Config, account data, certificates and the acme.sh Cron job are kept during manager updates and uninstall.'

@@ -16,6 +16,9 @@ deploy_extra_sync_command() {
     "$(shell_quote "$key_file")" "$(shell_quote "$extra_key")" "$(shell_quote "$extra_key")" \
     "$(shell_quote "$fullchain_file")" "$(shell_quote "$extra_fullchain")" "$(shell_quote "$extra_fullchain")"
 }
+deploy_meta_sync_command() {
+  printf '%s meta sync >/dev/null 2>&1 || true' "$(shell_quote "$SCRIPT_DIR/acme-manager.sh")"
+}
 deploy_sync_extra_files() {
   local domain="$1" target_dir="$2" key_file="$3" fullchain_file="$4" stem extra_key extra_fullchain
   [[ -f "$key_file" && -f "$fullchain_file" ]] || {
@@ -32,7 +35,7 @@ deploy_sync_extra_files() {
 }
 
 deploy_cert() {
-  local domain="${1:-}" key_type="${2:-$DEFAULT_KEY_TYPE}" target_dir key_file fullchain_file ca_file cert_file reloadcmd sync_cmd
+  local domain="${1:-}" key_type="${2:-$DEFAULT_KEY_TYPE}" target_dir key_file fullchain_file ca_file cert_file reloadcmd sync_cmd meta_cmd
   [[ -n "$domain" ]] || { error 'Domain is required'; return 1; }
   valid_domain "$domain" || { error "Invalid domain: $domain"; return 1; }
   case "$key_type" in ec-256) local key_args=(--ecc);; rsa-2048|rsa-3072|rsa-4096) local key_args=();; *) error 'Invalid key type'; return 1;; esac
@@ -46,7 +49,8 @@ deploy_cert() {
   reloadcmd=$(prompt_value 'Service reload hook (for example: nginx -t && systemctl reload nginx; empty skips service reload)' '')
   [[ -n "$reloadcmd" ]] && ! confirm 'acme.sh will execute this reload hook after renewal. Use this command?' && reloadcmd=''
   sync_cmd=$(deploy_extra_sync_command "$domain" "$target_dir" "$key_file" "$fullchain_file")
-  reloadcmd="$sync_cmd${reloadcmd:+ && $reloadcmd}"
+  meta_cmd=$(deploy_meta_sync_command)
+  reloadcmd="$sync_cmd && { $meta_cmd; }${reloadcmd:+ && $reloadcmd}"
   mkdir -p "$target_dir"
   local args=(--install-cert -d "$domain" "${key_args[@]}" --key-file "$key_file" --fullchain-file "$fullchain_file" --ca-file "$ca_file" --cert-file "$cert_file")
   [[ -n "$reloadcmd" ]] && args+=(--reloadcmd "$reloadcmd")
@@ -58,12 +62,13 @@ deploy_cert() {
   deploy_sync_extra_files "$domain" "$target_dir" "$key_file" "$fullchain_file" || return 1
   chmod 600 "$key_file" 2>/dev/null || true
   chmod 644 "$fullchain_file" "$ca_file" "$cert_file" 2>/dev/null || true
+  meta_sync || warn 'Certificate metadata/WebDAV synchronization failed; local deployment is complete'
   notify_event 'Deployment succeeded' "$domain" "Target directory=$target_dir" || true
   success "Certificate deployed to $target_dir"
 }
 
 deploy_noninteractive() {
-  local domain='' target_dir='' reloadcmd='' key_type="$DEFAULT_KEY_TYPE" key_file='' fullchain_file='' ca_file='' cert_file='' sync_cmd args=()
+  local domain='' target_dir='' reloadcmd='' key_type="$DEFAULT_KEY_TYPE" key_file='' fullchain_file='' ca_file='' cert_file='' sync_cmd meta_cmd args=()
   while (($#)); do
     case "$1" in
       -d|--domain) domain="$2"; shift 2;;
@@ -86,7 +91,8 @@ deploy_noninteractive() {
   [[ -n "$cert_file" ]] || cert_file="$target_dir/cert.pem"
   for path in "$key_file" "$fullchain_file" "$ca_file" "$cert_file"; do deploy_validate_path "$path" || return 2; done
   sync_cmd=$(deploy_extra_sync_command "$domain" "$target_dir" "$key_file" "$fullchain_file")
-  reloadcmd="$sync_cmd${reloadcmd:+ && $reloadcmd}"
+  meta_cmd=$(deploy_meta_sync_command)
+  reloadcmd="$sync_cmd && { $meta_cmd; }${reloadcmd:+ && $reloadcmd}"
   mkdir -p "$target_dir"
   args+=(--install-cert -d "$domain")
   case "$key_type" in ec-256) args+=(--ecc);; rsa-2048) args+=(--keylength 2048);; rsa-3072) args+=(--keylength 3072);; rsa-4096) args+=(--keylength 4096);; *) error 'Invalid key type'; return 2;; esac
@@ -99,5 +105,6 @@ deploy_noninteractive() {
   deploy_sync_extra_files "$domain" "$target_dir" "$key_file" "$fullchain_file" || return 1
   chmod 600 "$key_file" 2>/dev/null || true
   chmod 644 "$fullchain_file" "$ca_file" "$cert_file" 2>/dev/null || true
+  meta_sync || warn 'Certificate metadata/WebDAV synchronization failed; local deployment is complete'
   notify_event 'Deployment succeeded' "$domain" "Target directory=$target_dir" || true
 }

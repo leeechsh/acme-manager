@@ -16,6 +16,10 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/ca.sh"
 # shellcheck source=lib/dns.sh
 source "$SCRIPT_DIR/lib/dns.sh"
+# shellcheck source=lib/webdav.sh
+source "$SCRIPT_DIR/lib/webdav.sh"
+# shellcheck source=lib/meta.sh
+source "$SCRIPT_DIR/lib/meta.sh"
 # shellcheck source=lib/deploy.sh
 source "$SCRIPT_DIR/lib/deploy.sh"
 # shellcheck source=lib/notify.sh
@@ -65,6 +69,9 @@ Accounts and system:
   doctor                            Check dependencies, config, account and Cron
   config show|write
   logs                              View manager logs
+  webdav status|configure|test|sync
+                                  Manage WebDAV certificate synchronization
+  meta sync                        Regenerate certificate metadata and sync it
   update                            Update manager code from GitHub
   version
 
@@ -104,6 +111,10 @@ command_dispatch() {
     config)
       case "${1:-show}" in show) config_show;; write) config_write;; *) error 'Usage: config show|write'; return 2;; esac;;
     logs) menu_logs;;
+    webdav)
+      local sub="${1:-status}"; case "$sub" in status) webdav_status;; configure) webdav_configure;; test) webdav_test;; sync) meta_sync;; *) error 'Usage: webdav status|configure|test|sync'; return 2;; esac;;
+    meta)
+      case "${1:-sync}" in sync) meta_sync;; *) error 'Usage: meta sync'; return 2;; esac;;
     update) "$SCRIPT_DIR/install.sh" --update "$@";;
     version) printf '%s %s\n' "$ACME_MANAGER_NAME" "$ACME_MANAGER_VERSION";;
     help|-h|--help) usage;;
