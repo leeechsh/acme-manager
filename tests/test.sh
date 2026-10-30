@@ -14,6 +14,10 @@ case " $* " in
   *' --list '*) echo 'Main_Domain KeyLength SAN_Domains CA'; echo 'example.com ec-256 *.example.com letsencrypt';;
   *)
     original_args="$*"
+    if [[ " $* " == *' --remove '* ]] && [[ "${FAKE_REMOVE_FAIL:-0}" == 1 ]]; then
+      echo 'fake acme: renewal record not found' >&2
+      exit 1
+    fi
     if [[ " $* " == *' --install-cert '* ]]; then
       reloadcmd=''
       while (($#)); do
@@ -87,6 +91,17 @@ printf 'y\n' | "$ROOT/acme-manager.sh" remove --domain remove.example.com >/dev/
 [[ ! -e "$ACME_HOME/remove.example.com_ecc" ]]
 [[ ! -e "$ACME_HOME/remove.example.com" ]]
 [[ -f "$ACME_HOME/account.conf" ]]
+
+mkdir -p "$ACME_HOME/stale.example.com_ecc"
+: >"$ACME_HOME/stale.example.com_ecc/stale.example.com.key"
+if FAKE_REMOVE_FAIL=1 "$ROOT/acme-manager.sh" remove --domain stale.example.com >/dev/null 2>&1 <<'INPUT'
+y
+INPUT
+then
+  echo 'FAIL: removal should report the acme.sh record error' >&2
+  exit 1
+fi
+[[ ! -e "$ACME_HOME/stale.example.com_ecc" ]]
 
 "$ROOT/acme-manager.sh" deploy --domain example.com --target-dir "$TMP/certs/example.com" --reloadcmd 'true'
 assert_contains "$FAKE_LOG" '--install-cert -d example.com --ecc --key-file'

@@ -175,15 +175,24 @@ cert_renew() {
 }
 
 cert_remove() {
-  local domain="$1" revoke="${2:-false}"
+  local domain="$1" revoke="${2:-false}" remove_rc=0
   valid_domain "$domain" || { error 'Invalid domain'; return 1; }
   confirm "Remove the local record for $domain?" || { warn 'Cancelled'; return 1; }
   if [[ "$revoke" == true ]]; then
     confirm "Revoke the $domain certificate at the CA? This cannot be undone" || { warn 'Cancelled'; return 1; }
     run_acme_logged revoke --revoke --domain "$domain" || { error 'Certificate revocation failed'; return 1; }
   fi
-  run_acme_logged remove --remove --domain "$domain" || { error 'Certificate removal failed'; return 1; }
+  if run_acme_logged remove --remove --domain "$domain"; then
+    remove_rc=0
+  else
+    remove_rc=$?
+    warn 'acme.sh did not remove a matching renewal record; cleaning local native files anyway'
+  fi
   cert_remove_native_files "$domain"
+  if (( remove_rc != 0 )); then
+    error 'Certificate removal failed; local native files were cleaned'
+    return "$remove_rc"
+  fi
   success "Certificate processed: $domain"
 }
 
