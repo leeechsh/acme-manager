@@ -4,7 +4,7 @@ config_defaults() {
   local state_root
   if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
     state_root='/var'
-    CERT_DIR="${ACME_MANAGER_CERT_DIR:-/etc/ssl/acme}"
+    CERT_DIR="${ACME_MANAGER_CERT_DIR:-/var/cert}"
     LOG_DIR="${ACME_MANAGER_LOG_DIR:-/var/log/acme-manager}"
   else
     state_root="${XDG_STATE_HOME:-$HOME/.local/state}/acme-manager"

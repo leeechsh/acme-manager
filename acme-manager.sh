@@ -50,7 +50,7 @@ Certificates:
   info --domain example.com         Show certificate details
   renew --domain example.com [--force] [--key-type ...]
   renew --all [--force]
-  deploy --domain example.com [--target-dir /etc/ssl/acme/example.com]
+  deploy --domain example.com [--target-dir /var/cert/example.com]
          [--key-file ...] [--fullchain-file ...] [--ca-file ...] [--cert-file ...]
          [--reloadcmd 'nginx -t && systemctl reload nginx']
   revoke --domain example.com       Revoke and remove (confirmation required)

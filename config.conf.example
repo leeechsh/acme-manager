@@ -2,7 +2,7 @@
 DEFAULT_CA="letsencrypt"
 DEFAULT_DNS="cloudflare"
 DEFAULT_KEY_TYPE="ec-256"
-CERT_DIR="/etc/ssl/acme"
+CERT_DIR="/var/cert"
 AUTO_RENEW="true"
 NOTIFY_ENABLED="true"
 NOTIFY_LEVEL="2"

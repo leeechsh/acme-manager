@@ -81,7 +81,7 @@ cert_list() {
 cert_info() { local domain="$1"; valid_domain "$domain" || return 1; run_acme --info --domain "$domain"; }
 
 cert_deployment_summary() {
-  local file domain cert key fullchain ca
+  local file domain cert key fullchain ca target_dir stem extra_key extra_fullchain
   [[ -d "$ACME_HOME" ]] || return 0
   printf '\n%sDeployment Paths%s\n' "$UI_ACCENT" "$UI_RESET"
   while IFS= read -r -d '' file; do
@@ -96,6 +96,14 @@ cert_deployment_summary() {
     printf '    %-10s %s\n' 'key' "${key:--}"
     printf '    %-10s %s\n' 'fullchain' "${fullchain:--}"
     printf '    %-10s %s\n' 'ca' "${ca:--}"
+    if [[ -n "$cert" && "$cert" != '-' ]]; then
+      target_dir=$(dirname "$cert")
+      stem=$(deploy_extra_stem "$domain")
+      extra_key="$target_dir/$stem.key"
+      extra_fullchain="$target_dir/$stem.pem"
+      printf '    %-10s %s\n' 'key-copy' "$extra_key"
+      printf '    %-10s %s\n' 'chain-copy' "$extra_fullchain"
+    fi
   done < <(find "$ACME_HOME" -mindepth 2 -maxdepth 2 -type f -name '*.conf' -print0 2>/dev/null)
 }
 

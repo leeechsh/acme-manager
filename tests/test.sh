@@ -12,7 +12,27 @@ printf '%s\n' "$*" >> "${FAKE_LOG:?}"
 case " $* " in
   *' --version '*) echo 'https://github.com/acmesh-official/acme.sh 3.1.0';;
   *' --list '*) echo 'Main_Domain KeyLength SAN_Domains CA'; echo 'example.com ec-256 *.example.com letsencrypt';;
-  *) echo "fake acme: $*";;
+  *)
+    original_args="$*"
+    if [[ " $* " == *' --install-cert '* ]]; then
+      reloadcmd=''
+      while (($#)); do
+        case "$1" in
+          --key-file|--fullchain-file|--ca-file|--cert-file)
+            mkdir -p "$(dirname "$2")"
+            printf 'fake certificate file\n' >"$2"
+            shift 2
+            ;;
+          --reloadcmd)
+            reloadcmd="$2"
+            shift 2
+            ;;
+          *) shift;;
+        esac
+      done
+      [[ -z "$reloadcmd" ]] || bash -c "$reloadcmd"
+    fi
+    echo "fake acme: $original_args";;
 esac
 FAKE
 chmod 700 "$FAKE"
@@ -56,6 +76,12 @@ assert_contains "$FAKE_LOG" '--renew --domain example.com --ecc --force --home'
 
 "$ROOT/acme-manager.sh" deploy --domain example.com --target-dir "$TMP/certs/example.com" --reloadcmd 'true'
 assert_contains "$FAKE_LOG" '--install-cert -d example.com --ecc --key-file'
+assert_contains "$FAKE_LOG" 'example.com.key'
+assert_contains "$FAKE_LOG" 'example.com.pem'
+[[ -f "$TMP/certs/example.com/example.com.key" ]]
+[[ -f "$TMP/certs/example.com/example.com.pem" ]]
+cmp "$TMP/certs/example.com/privkey.pem" "$TMP/certs/example.com/example.com.key"
+cmp "$TMP/certs/example.com/fullchain.pem" "$TMP/certs/example.com/example.com.pem"
 
 "$ROOT/acme-manager.sh" dns configure cloudflare <<'INPUT'
 token-value

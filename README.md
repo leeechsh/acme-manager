@@ -64,13 +64,26 @@ acme-manager list
 acme-manager renew --domain example.com
 acme-manager renew --all
 acme-manager deploy --domain example.com \
-  --target-dir /etc/ssl/acme/example.com \
+  --target-dir /var/cert/example.com \
   --reloadcmd 'nginx -t && systemctl reload nginx'
 acme-manager dns status cloudflare
 acme-manager notify configure
 acme-manager cron install
 acme-manager doctor
 ```
+
+root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生成：
+
+```text
+/var/cert/example.com/cert.pem
+/var/cert/example.com/privkey.pem
+/var/cert/example.com/fullchain.pem
+/var/cert/example.com/ca.pem
+/var/cert/example.com/example.com.key
+/var/cert/example.com/example.com.pem
+```
+
+其中 `.key` 和域名 `.pem` 文件会通过 acme.sh 的部署 Reload Hook 在自动续期后同步更新。
 
 `revoke`、`remove`、删除 DNS 凭据和移除 Cron 都会要求二次确认。命令参数和配置文件不会接收 API 密钥或 SMTP 密码；凭据交给 acme.sh 原生账户配置保存。
 
