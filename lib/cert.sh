@@ -11,11 +11,12 @@ cert_key_args() {
 }
 
 cert_issue() {
-  local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 domains=() domain value
+  local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 wildcard=1 domains=() domain value
   while (($#)); do
     case "$1" in
       -d|--domain) domains+=("$2"); shift 2;;
       --domains) IFS=',' read -r -a domains <<<"$2"; shift 2;;
+      --no-wildcard) wildcard=0; shift;;
       --dns) provider="$2"; shift 2;;
       --ca|--server) ca="$2"; shift 2;;
       --key-type) key_type="$2"; shift 2;;
@@ -28,10 +29,17 @@ cert_issue() {
     value=$(prompt_value 'Domains (root, wildcard or comma-separated SANs)') || return 1
     IFS=',' read -r -a domains <<<"$value"
   fi
-  for domain in "${domains[@]}"; do
-    domain="${domain## }"; domain="${domain%% }"
+  local index
+  for index in "${!domains[@]}"; do
+    domain="${domains[index]}"
+    domain="${domain#"${domain%%[![:space:]]*}"}"
+    domain="${domain%"${domain##*[![:space:]]}"}"
+    domains[index]="$domain"
     valid_domain "$domain" || { error "Invalid domain: $domain"; return 1; }
   done
+  if (( wildcard )) && ((${#domains[@]} == 1)) && [[ "${domains[0]}" != \*.* ]]; then
+    domains+=("*.${domains[0]}")
+  fi
   valid_choice "$provider" cloudflare dnspod aliyun || { error 'Invalid DNS provider'; return 1; }
   valid_choice "$ca" letsencrypt zerossl || { error 'Invalid CA'; return 1; }
   valid_choice "$key_type" ec-256 rsa-2048 rsa-3072 rsa-4096 || { error 'Invalid key type'; return 1; }

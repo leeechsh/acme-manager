@@ -43,7 +43,7 @@ Interactive:
   menu                              Open the numbered menu (default)
 
 Certificates:
-  issue --domain example.com [--domain '*.example.com'] [--dns cloudflare]
+  issue --domain example.com [--domain '*.example.com'] [--no-wildcard] [--dns cloudflare]
         [--ca letsencrypt|zerossl] [--key-type ec-256|rsa-2048|rsa-3072|rsa-4096]
         [--email ops@example.com] [--staging]
   list                              List acme.sh certificates

@@ -45,6 +45,12 @@ rm -f /tmp/acme-manager-should-not-exist
 "$ROOT/acme-manager.sh" issue --domain example.com --domain '*.example.com' --dns cloudflare --ca letsencrypt --key-type ec-256 --staging
 assert_contains "$FAKE_LOG" '--issue --dns dns_cf --server letsencrypt --domain example.com --domain *.example.com --keylength ec-256 --staging --home'
 
+"$ROOT/acme-manager.sh" issue --domain single.example.com --dns cloudflare
+assert_contains "$FAKE_LOG" '--issue --dns dns_cf --server letsencrypt --domain single.example.com --domain *.single.example.com --keylength ec-256 --home'
+
+"$ROOT/acme-manager.sh" issue --domain root-only.example.com --no-wildcard --dns cloudflare
+assert_contains "$FAKE_LOG" '--issue --dns dns_cf --server letsencrypt --domain root-only.example.com --keylength ec-256 --home'
+
 "$ROOT/acme-manager.sh" renew --domain example.com --force --key-type ec-256
 assert_contains "$FAKE_LOG" '--renew --domain example.com --ecc --force --home'
 
