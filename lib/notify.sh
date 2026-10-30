@@ -11,7 +11,7 @@ notify_configure() {
   SMTP_TO=$(prompt_value 'To addresses (comma-separated)' "${SMTP_TO:-}")
   SMTP_USERNAME=$(prompt_value 'SMTP username (optional)' "${SMTP_USERNAME:-}")
   local password
-  password=$(prompt_secret 'SMTP password (empty keeps the current password)') || return 1
+  password=$(prompt_value 'SMTP password (empty keeps the current password)') || return 1
   [[ -n "$SMTP_HOST" && -n "$SMTP_FROM" && -n "$SMTP_TO" ]] || { error 'SMTP host, from address and recipients are required'; return 1; }
   valid_choice "$SMTP_SECURE" none tls ssl || { error 'Invalid encryption mode'; return 1; }
   [[ "$SMTP_PORT" =~ ^[0-9]+$ ]] || { error 'Port must be numeric'; return 1; }

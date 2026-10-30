@@ -37,10 +37,10 @@ dns_configure() {
       value=$(prompt_value 'DNSPod SecretId') || return 1
       [[ -n "$value" ]] || { warn 'Cancelled'; return 1; }
       account_set_var Tencent_SecretId "$value"
-      value=$(prompt_secret 'DNSPod SecretKey') || return 1
+      value=$(prompt_value 'DNSPod SecretKey') || return 1
       [[ -n "$value" ]] || { error 'SecretKey cannot be empty'; return 1; }
       account_set_var Tencent_SecretKey "$value"
-      value=$(prompt_secret 'DNSPod session token (optional)') || return 1
+      value=$(prompt_value 'DNSPod session token (optional)') || return 1
       if [[ -n "$value" ]]; then account_set_var Tencent_SessionToken "$value"; else account_unset_var Tencent_SessionToken; fi
       value=$(prompt_value 'DNSPod region (optional)' '') || return 1
       if [[ -n "$value" ]]; then account_set_var Tencent_Region "$value"; else account_unset_var Tencent_Region; fi
@@ -49,10 +49,10 @@ dns_configure() {
       value=$(prompt_value 'Alibaba Cloud AccessKey ID') || return 1
       [[ -n "$value" ]] || { warn 'Cancelled'; return 1; }
       account_set_var Ali_Key "$value"
-      value=$(prompt_secret 'Alibaba Cloud AccessKey Secret') || return 1
+      value=$(prompt_value 'Alibaba Cloud AccessKey Secret') || return 1
       [[ -n "$value" ]] || { error 'AccessKey Secret cannot be empty'; return 1; }
       account_set_var Ali_Secret "$value"
-      value=$(prompt_secret 'Alibaba Cloud security token (optional)') || return 1
+      value=$(prompt_value 'Alibaba Cloud security token (optional)') || return 1
       if [[ -n "$value" ]]; then account_set_var Ali_SecurityToken "$value"; else account_unset_var Ali_SecurityToken; fi
       ;;
   esac

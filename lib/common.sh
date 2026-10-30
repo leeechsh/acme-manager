@@ -173,13 +173,6 @@ prompt_select() {
   done
 }
 
-prompt_secret() {
-  local label="$1" value
-  read -r -s -p "$(printf '%s%s%s: ' "$UI_ACCENT" "$label" "$UI_RESET")" value || return 1
-  printf '\n' >&2
-  printf '%s\n' "$value"
-}
-
 confirm() {
   local question="$1" answer
   read -r -p "$(printf '%s%s%s [y/N]: ' "$UI_WARNING" "$question" "$UI_RESET")" answer || return 1
