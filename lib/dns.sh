@@ -26,7 +26,7 @@ dns_configure() {
   valid_choice "$provider" cloudflare dnspod aliyun || { error 'Unknown DNS provider'; return 1; }
   case "$provider" in
     cloudflare)
-      value=$(prompt_secret 'Cloudflare API token (empty cancels)') || return 1
+      value=$(prompt_value 'Cloudflare API token (empty cancels)') || return 1
       [[ -n "$value" ]] || { warn 'Cancelled'; return 1; }
       account_set_var CF_Token "$value"
       local account_id
