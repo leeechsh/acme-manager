@@ -71,6 +71,11 @@ assert_contains "$FAKE_LOG" '--issue --dns dns_cf --server letsencrypt --domain 
 "$ROOT/acme-manager.sh" issue --domain root-only.example.com --no-wildcard --dns cloudflare
 assert_contains "$FAKE_LOG" '--issue --dns dns_cf --server letsencrypt --domain root-only.example.com --keylength ec-256 --home'
 
+mkdir -p "$ACME_HOME/retry.example.com_ecc"
+: >"$ACME_HOME/retry.example.com_ecc/retry.example.com.key"
+"$ROOT/acme-manager.sh" issue --domain retry.example.com --dns dnspod
+assert_contains "$FAKE_LOG" '--issue --dns dns_tencent --server letsencrypt --domain retry.example.com --domain *.retry.example.com --keylength ec-256 --force --home'
+
 "$ROOT/acme-manager.sh" renew --domain example.com --force --key-type ec-256
 assert_contains "$FAKE_LOG" '--renew --domain example.com --ecc --force --home'
 

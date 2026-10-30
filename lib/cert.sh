@@ -10,13 +10,21 @@ cert_key_args() {
   esac
 }
 
+cert_issue_key_exists() {
+  local domain="$1" key_type="$2" stem suffix=''
+  stem="${domain#\*.}"
+  [[ "$key_type" == 'ec-256' ]] && suffix='_ecc'
+  [[ -f "$ACME_HOME/${stem}${suffix}/${stem}.key" ]]
+}
+
 cert_issue() {
-  local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 wildcard=1 interactive=0 domains=() domain value
+  local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 force=0 wildcard=1 interactive=0 domains=() domain value
   while (($#)); do
     case "$1" in
       -d|--domain) domains+=("$2"); shift 2;;
       --domains) IFS=',' read -r -a domains <<<"$2"; shift 2;;
       --no-wildcard) wildcard=0; shift;;
+      --force) force=1; shift;;
       --interactive) interactive=1; shift;;
       --dns) provider="$2"; shift 2;;
       --ca|--server) ca="$2"; shift 2;;
@@ -65,6 +73,10 @@ cert_issue() {
   for domain in "${domains[@]}"; do args+=(--domain "$domain"); done
   while IFS= read -r value; do args+=("$value"); done < <(cert_key_args "$key_type")
   (( staging )) && args+=(--staging)
+  if (( force )) || cert_issue_key_exists "${domains[0]}" "$key_type"; then
+    (( force )) || info "Existing domain key detected; retrying with --force"
+    args+=(--force)
+  fi
   [[ -n "$email" ]] && args+=(--accountemail "$email")
   if ! run_acme_logged issue "${args[@]}"; then
     error 'Certificate issuance failed; see the log'
