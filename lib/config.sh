@@ -41,6 +41,7 @@ config_load() {
   local env_acme_home="${ACME_HOME:-}"
   local env_cert_dir="${ACME_MANAGER_CERT_DIR:-}"
   local env_log_dir="${ACME_MANAGER_LOG_DIR:-}"
+  local migrated_legacy_cert_dir=0
   config_defaults
   CONFIG_FILE="${ACME_MANAGER_CONFIG:-$(config_path_default)}"
   export CONFIG_FILE
@@ -55,8 +56,16 @@ config_load() {
       value="${value#\"}"; value="${value%\"}"
       value="${value#\'}"; value="${value%\'}"
       case "$key" in
-        DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|CERT_DIR|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME)
+        DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME)
           printf -v "$key" '%s' "$value" ;;
+        CERT_DIR)
+          if [[ "$value" == '/etc/ssl/acme' && -z "$env_cert_dir" && ${EUID:-$(id -u)} -eq 0 ]]; then
+            CERT_DIR='/var/cert'
+            migrated_legacy_cert_dir=1
+          else
+            CERT_DIR="$value"
+          fi
+          ;;
         *) warn "Ignoring unknown config key: $key" ;;
       esac
     else
@@ -67,6 +76,9 @@ config_load() {
   [[ -n "$env_cert_dir" ]] && CERT_DIR="$env_cert_dir"
   [[ -n "$env_log_dir" ]] && LOG_DIR="$env_log_dir"
   config_validate || return 1
+  if (( migrated_legacy_cert_dir )); then
+    config_write >/dev/null 2>&1 || true
+  fi
 }
 
 config_validate() {

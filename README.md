@@ -85,6 +85,8 @@ root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生�
 
 其中 `.key` 和域名 `.pem` 文件会通过 acme.sh 的部署 Reload Hook 在自动续期后同步更新。
 
+升级时，管理器会把旧版本自动生成的 `CERT_DIR="/etc/ssl/acme"` 迁移为 `/var/cert`；用户自定义的其它 `CERT_DIR` 不会被覆盖。
+
 `revoke`、`remove`、删除 DNS 凭据和移除 Cron 都会要求二次确认。命令参数和配置文件不会接收 API 密钥或 SMTP 密码；凭据交给 acme.sh 原生账户配置保存。
 
 交互菜单会根据终端自动启用配色；在日志重定向、自动化任务或不支持 ANSI 的终端中设置 `NO_COLOR=1` 可关闭颜色，不影响命令行为。
