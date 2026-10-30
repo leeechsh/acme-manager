@@ -8,6 +8,7 @@ REPO_SLUG=${REPO_SLUG:-leeechsh/acme-manager}
 REPO_REF=${REPO_REF:-main}
 TMP_ROOT=
 SCRIPT_DIR=
+CONFIG_DIR_FROM_META=0
 
 if [ -f "${0:-}" ]; then
   SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || SCRIPT_DIR=
@@ -19,14 +20,19 @@ if [ -z "$PREFIX" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/.install-meta" 
   while IFS='=' read -r key value; do
     case "$key" in
       PREFIX) PREFIX=$value ;;
-      CONFIG_DIR) CONFIG_DIR=$value ;;
+      CONFIG_DIR) CONFIG_DIR=$value; CONFIG_DIR_FROM_META=1 ;;
       REPO_SLUG) REPO_SLUG=$value ;;
     esac
   done <"$SCRIPT_DIR/.install-meta"
 fi
 
 PREFIX=${PREFIX:-/usr/local}
-CONFIG_DIR=${CONFIG_DIR:-/etc/acme-manager}
+CONFIG_DIR=${CONFIG_DIR:-$PREFIX/acme-manager/etc}
+# The old default was /etc/acme-manager. Do not move it; use the new path so
+# the user can move the existing file manually before running the manager.
+if [ "$CONFIG_DIR_FROM_META" -eq 1 ] && [ "$CONFIG_DIR" = "/etc/acme-manager" ] && [ "$PREFIX" = "/usr/local" ]; then
+  CONFIG_DIR=$PREFIX/acme-manager/etc
+fi
 DEST=$PREFIX/acme-manager
 BIN=$PREFIX/bin/acme-manager
 LIB_LINK=$PREFIX/lib/acme-manager
@@ -42,7 +48,7 @@ Usage: install.sh [options]
 
 Environment:
   PREFIX                Installation prefix, default /usr/local
-  CONFIG_DIR            Config directory, default /etc/acme-manager
+  CONFIG_DIR            Config directory, default PREFIX/acme-manager/etc
   REPO_SLUG             GitHub repository, default $REPO_SLUG
   REPO_REF              GitHub branch or tag, default $REPO_REF
 USAGE

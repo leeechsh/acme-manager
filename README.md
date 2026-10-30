@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/leeechsh/acme-manager/main/install.
 /usr/local/lib/acme-manager -> /usr/local/acme-manager/
 ```
 
-更新只替换 `/usr/local/acme-manager/` 中的程序文件，并保留 `/etc/acme-manager/config.conf`、acme.sh 原生账户、证书和 Cron。也可以通过 `REPO_SLUG`、`REPO_REF`、`PREFIX` 和 `CONFIG_DIR` 覆盖默认仓库与安装位置。
+更新只替换 `/usr/local/acme-manager/` 中的程序文件，并保留 `/usr/local/acme-manager/etc/config.conf`、acme.sh 原生账户、证书和 Cron。也可以通过 `REPO_SLUG`、`REPO_REF`、`PREFIX` 和 `CONFIG_DIR` 覆盖默认仓库与安装位置。
 
 用户目录安装示例：
 
@@ -98,7 +98,7 @@ DNS 凭据使用 acme.sh 插件原生变量：Cloudflare 为 `CF_Token`，腾讯
 
 ## 配置
 
-默认配置为 `/etc/acme-manager/config.conf`；非 root 用户默认使用 `$XDG_CONFIG_HOME/acme-manager/config.conf`。也可以通过 `ACME_MANAGER_CONFIG` 指定路径。配置解析只接受白名单键，不执行 `source`，并且会写入 `0600`。
+默认配置为 `/usr/local/acme-manager/etc/config.conf`；非 root 用户默认使用 `$XDG_CONFIG_HOME/acme-manager/config.conf`。也可以通过 `ACME_MANAGER_CONFIG` 指定路径。配置解析只接受白名单键，不执行 `source`，并且会写入 `0600`。
 
 完整示例见 `config.conf.example`。`ACME_HOME` 只决定 acme.sh 原生目录，`CERT_DIR` 只决定管理器默认部署目录。
 

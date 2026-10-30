@@ -31,7 +31,7 @@ config_path_default() {
   if [[ -n "${ACME_MANAGER_CONFIG:-}" ]]; then
     printf '%s\n' "$ACME_MANAGER_CONFIG"
   elif [[ -w /etc || ${EUID:-$(id -u)} -eq 0 ]]; then
-    printf '%s\n' '/etc/acme-manager/config.conf'
+    printf '%s\n' "${SCRIPT_DIR:-/usr/local/acme-manager}/etc/config.conf"
   else
     printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/acme-manager/config.conf"
   fi

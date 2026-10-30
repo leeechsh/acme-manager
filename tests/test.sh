@@ -138,4 +138,10 @@ PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" --uninstall 
 [[ ! -e "$TMP/prefix/acme-manager" ]]
 [[ ! -e "$TMP/prefix/bin/acme-manager" ]]
 
+PREFIX="$TMP/prefix-default" sh "$ROOT/install.sh" >/dev/null
+[[ -f "$TMP/prefix-default/acme-manager/etc/config.conf" ]]
+[[ "$(grep '^CONFIG_DIR=' "$TMP/prefix-default/acme-manager/.install-meta")" == "CONFIG_DIR=$TMP/prefix-default/acme-manager/etc" ]]
+PREFIX="$TMP/prefix-default" sh "$ROOT/install.sh" --uninstall >/dev/null
+[[ ! -e "$TMP/prefix-default/acme-manager" ]]
+
 printf 'PASS: ACME Manager smoke tests\n'
