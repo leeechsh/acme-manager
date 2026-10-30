@@ -84,6 +84,7 @@ config_load() {
   local line key value
   while IFS= read -r line || [[ -n "$line" ]]; do
     line=$(config_strip_comment "$line")
+    line="${line%"${line##*[![:space:]]}"}"
     [[ "$line" =~ ^[[:space:]]*$ ]] && continue
     if [[ "$line" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)[[:space:]]*$ ]]; then
       key="${BASH_REMATCH[1]}"

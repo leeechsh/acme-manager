@@ -153,7 +153,7 @@ cat >>"$ACME_MANAGER_CONFIG" <<'INJECT_WEBDAV'
 WEBDAV_ENABLED="true"
 WEBDAV_URL="https://dav.example.test/acme"
 WEBDAV_USERNAME="sync-user"
-WEBDAV_PASSWORD="sync#secret"
+WEBDAV_PASSWORD="sync#secret" # inline comments remain safe
 INJECT_WEBDAV
 rm -f "$ACME_HOME/account.conf"
 "$ROOT/acme-manager.sh" webdav sync >/dev/null
