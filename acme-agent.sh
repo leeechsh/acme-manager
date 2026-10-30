@@ -85,14 +85,21 @@ agent_cleanup() {
 agent_meta_entries() {
   awk -F'"' '
     /"domain":/ { domain=$4 }
-    /"directory":/ {
-      directory=$4
+    /"directory":/ { directory=$4 }
+    /"fingerprint_sha256":/ {
+      fingerprint=$4
       if (domain != "" && directory != "") {
-        print domain "\t" directory
-        domain=""; directory=""
+        print domain "\t" directory "\t" fingerprint
+        domain=""; directory=""; fingerprint=""
       }
     }
   ' "$1"
+}
+
+agent_meta_has_entry() {
+  local file="$1" directory="$2" fingerprint="$3"
+  agent_meta_entries "$file" | awk -F '\t' -v wanted_dir="$directory" -v wanted_fp="$fingerprint" \
+    '$2 == wanted_dir && $3 == wanted_fp { found=1 } END { exit(found ? 0 : 1) }'
 }
 
 agent_safe_name() {
@@ -100,7 +107,7 @@ agent_safe_name() {
 }
 
 agent_sync() {
-  local remote_meta local_meta domain directory file remote_dir
+  local remote_meta local_meta domain directory fingerprint file remote_dir changed=0
   agent_config_validate || return 1
   mkdir -p "$TARGET_DIR"
   remote_meta=$(agent_url_join "$WEBDAV_URL" meta.json)
@@ -116,10 +123,15 @@ agent_sync() {
   AGENT_ENTRIES=$(mktemp "${TMPDIR:-/tmp}/acme-agent-entries.XXXXXX")
   agent_meta_entries "$AGENT_TMP_META" >"$AGENT_ENTRIES"
   AGENT_STAGING=$(mktemp -d "$TARGET_DIR/.acme-agent-sync.XXXXXX")
-  while IFS=$'\t' read -r domain directory; do
+  while IFS=$'\t' read -r domain directory fingerprint; do
     [[ -n "$domain" && -n "$directory" ]] || continue
     agent_safe_name "$directory" || { printf 'Unsafe certificate directory in metadata: %s\n' "$directory" >&2; return 1; }
+    if [[ -f "$local_meta" && -d "$TARGET_DIR/$directory" && -n "$fingerprint" ]] &&
+      agent_meta_has_entry "$local_meta" "$directory" "$fingerprint"; then
+      continue
+    fi
     remote_dir=$(agent_url_join "$WEBDAV_URL" "$directory")
+    changed=1
     mkdir -p "$AGENT_STAGING/$directory"
     for file in cert.pem privkey.pem fullchain.pem ca.pem "$directory.key" "$directory.pem"; do
       if ! agent_curl "$(agent_url_join "$remote_dir" "$file")" -o "$AGENT_STAGING/$directory/$file"; then
@@ -133,8 +145,9 @@ agent_sync() {
     chmod 600 "$AGENT_STAGING/$directory/privkey.pem"
     chmod 644 "$AGENT_STAGING/$directory"/*.pem 2>/dev/null || true
   done <"$AGENT_ENTRIES"
-  while IFS=$'\t' read -r domain directory; do
+  while IFS=$'\t' read -r domain directory fingerprint; do
     [[ -n "$directory" ]] || continue
+    [[ -d "$AGENT_STAGING/$directory" ]] || continue
     rm -rf "$TARGET_DIR/$directory"
     mv "$AGENT_STAGING/$directory" "$TARGET_DIR/$directory"
   done < <(agent_meta_entries "$AGENT_TMP_META")
@@ -142,7 +155,7 @@ agent_sync() {
   chmod 644 "$local_meta"
   agent_cleanup
   trap - EXIT
-  if [[ -n "$RELOAD_CMD" ]]; then
+  if (( changed )) && [[ -n "$RELOAD_CMD" ]]; then
     bash -c "$RELOAD_CMD" || { printf 'Reload command failed\n' >&2; return 1; }
   fi
   printf 'Certificates synchronized into %s\n' "$TARGET_DIR"
