@@ -165,7 +165,14 @@ cert_menu() {
       3) domain=$(prompt_value 'Domain'); cert_info "$domain" || true; pause_screen;;
       4) domain=$(prompt_value 'Domain (leave empty to renew all)' ''); if [[ -n "$domain" ]]; then cert_renew --domain "$domain" || true; else cert_renew --all || true; fi; pause_screen;;
       5) cert_expiry_check || true; pause_screen;;
-      6) domain=$(prompt_value 'Domain'); revoke=$(prompt_value 'Also revoke the certificate true/false' 'false'); cert_remove "$domain" "$revoke" || true; pause_screen;;
+      6)
+        domain=$(prompt_value 'Domain')
+        revoke=$(prompt_select 'Also revoke the certificate at the CA?' false \
+          false 'No' \
+          true 'Yes')
+        cert_remove "$domain" "$revoke" || true
+        pause_screen
+        ;;
       0) return 0;; *) warn 'Invalid choice';;
     esac
   done

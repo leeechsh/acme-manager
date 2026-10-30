@@ -144,6 +144,35 @@ prompt_value() {
   fi
 }
 
+prompt_select() {
+  local label="$1" current="${2:-}" choice index default_index=1
+  local -a values=() labels=()
+  shift 2
+  while (($# >= 2)); do
+    values+=("$1")
+    labels+=("$2")
+    shift 2
+  done
+  ((${#values[@]} > 0)) || return 1
+
+  printf '\n%s%s%s\n' "$UI_ACCENT" "$label" "$UI_RESET" >&2
+  for index in "${!values[@]}"; do
+    [[ "${values[index]}" == "$current" ]] && default_index=$((index + 1))
+    printf '  %s%2d%s  %-28s %s[%s]%s\n' \
+      "$UI_PRIMARY" "$((index + 1))" "$UI_RESET" "${labels[index]}" \
+      "$UI_MUTED" "${values[index]}" "$UI_RESET" >&2
+  done
+  while true; do
+    read -r -p "$(printf '%sChoose a number [1-%d] (Enter keeps %s): ' "$UI_ACCENT" "${#values[@]}" "${labels[default_index-1]}")" choice || return 1
+    [[ -n "$choice" ]] || choice="$default_index"
+    if [[ "$choice" =~ ^[0-9]+$ && "$choice" -ge 1 && "$choice" -le "${#values[@]}" ]]; then
+      printf '%s\n' "${values[choice-1]}"
+      return 0
+    fi
+    warn "Invalid selection; choose 1-${#values[@]}"
+  done
+}
+
 prompt_secret() {
   local label="$1" value
   read -r -s -p "$(printf '%s%s%s: ' "$UI_ACCENT" "$label" "$UI_RESET")" value || return 1

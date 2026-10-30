@@ -36,7 +36,9 @@ ca_menu() {
       1) ca_show || true; pause_screen;;
       2)
         local ca_choice
-        ca_choice=$(prompt_value 'CA (letsencrypt/zerossl)' "$DEFAULT_CA")
+        ca_choice=$(prompt_select 'Select a certificate authority' "$DEFAULT_CA" \
+          letsencrypt "Let's Encrypt" \
+          zerossl 'ZeroSSL') || true
         ca_set_default "$ca_choice" || true
         pause_screen
         ;;

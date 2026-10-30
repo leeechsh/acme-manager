@@ -81,9 +81,30 @@ dns_menu() {
     menu_choice 'Choose an action [0-3]:' || return 0
     local provider
     case "$MENU_CHOICE" in
-      1) provider=$(prompt_value 'Provider (cloudflare/dnspod/aliyun)' "$DEFAULT_DNS"); dns_status "$provider" || true; pause_screen;;
-      2) provider=$(prompt_value 'Provider (cloudflare/dnspod/aliyun)' "$DEFAULT_DNS"); dns_configure "$provider" || true; pause_screen;;
-      3) provider=$(prompt_value 'Provider (cloudflare/dnspod/aliyun)' "$DEFAULT_DNS"); dns_remove "$provider" || true; pause_screen;;
+      1)
+        provider=$(prompt_select 'Select a DNS provider' "$DEFAULT_DNS" \
+          cloudflare 'Cloudflare' \
+          dnspod 'Tencent DNSPod' \
+          aliyun 'Alibaba Cloud DNS') || true
+        [[ -n "${provider:-}" ]] && dns_status "$provider" || true
+        pause_screen
+        ;;
+      2)
+        provider=$(prompt_select 'Select a DNS provider' "$DEFAULT_DNS" \
+          cloudflare 'Cloudflare' \
+          dnspod 'Tencent DNSPod' \
+          aliyun 'Alibaba Cloud DNS') || true
+        [[ -n "${provider:-}" ]] && dns_configure "$provider" || true
+        pause_screen
+        ;;
+      3)
+        provider=$(prompt_select 'Select a DNS provider' "$DEFAULT_DNS" \
+          cloudflare 'Cloudflare' \
+          dnspod 'Tencent DNSPod' \
+          aliyun 'Alibaba Cloud DNS') || true
+        [[ -n "${provider:-}" ]] && dns_remove "$provider" || true
+        pause_screen
+        ;;
       0) return 0;; *) warn 'Invalid choice';;
     esac
   done

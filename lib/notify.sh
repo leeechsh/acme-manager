@@ -3,7 +3,10 @@
 notify_configure() {
   SMTP_HOST=$(prompt_value 'SMTP host' "${SMTP_HOST:-}")
   SMTP_PORT=$(prompt_value 'SMTP port' "${SMTP_PORT:-587}")
-  SMTP_SECURE=$(prompt_value 'Encryption (none/tls/ssl)' "${SMTP_SECURE:-tls}")
+  SMTP_SECURE=$(prompt_select 'SMTP encryption' "${SMTP_SECURE:-tls}" \
+    none 'None' \
+    tls 'STARTTLS' \
+    ssl 'SSL/TLS')
   SMTP_FROM=$(prompt_value 'From address' "${SMTP_FROM:-}")
   SMTP_TO=$(prompt_value 'To addresses (comma-separated)' "${SMTP_TO:-}")
   SMTP_USERNAME=$(prompt_value 'SMTP username (optional)' "${SMTP_USERNAME:-}")
@@ -118,8 +121,14 @@ notify_menu() {
       2) notify_configure || true; pause_screen;;
       3) notify_test || true; pause_screen;;
       4)
-        enabled=$(prompt_value 'Enable notifications true/false' "$NOTIFY_ENABLED")
-        level=$(prompt_value 'Notification level 0-3' "$NOTIFY_LEVEL")
+        enabled=$(prompt_select 'Enable notifications' "$NOTIFY_ENABLED" \
+          true 'Enabled' \
+          false 'Disabled')
+        level=$(prompt_select 'Notification level' "$NOTIFY_LEVEL" \
+          0 'Disabled' \
+          1 'Errors only' \
+          2 'Warnings and errors' \
+          3 'All events')
         valid_bool "$enabled" && [[ "$level" =~ ^[0-3]$ ]] || { error 'Invalid input'; pause_screen; continue; }
         NOTIFY_ENABLED="$enabled"
         NOTIFY_LEVEL="$level"

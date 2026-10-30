@@ -88,13 +88,30 @@ menu_global() {
     case "$MENU_CHOICE" in
       1) config_show; pause_screen;;
       2)
-        DEFAULT_CA=$(prompt_value 'Default CA' "$DEFAULT_CA")
-        DEFAULT_DNS=$(prompt_value 'Default DNS provider' "$DEFAULT_DNS")
-        DEFAULT_KEY_TYPE=$(prompt_value 'Default key type' "$DEFAULT_KEY_TYPE")
+        DEFAULT_CA=$(prompt_select 'Default certificate authority' "$DEFAULT_CA" \
+          letsencrypt "Let's Encrypt" \
+          zerossl 'ZeroSSL')
+        DEFAULT_DNS=$(prompt_select 'Default DNS provider' "$DEFAULT_DNS" \
+          cloudflare 'Cloudflare' \
+          dnspod 'Tencent DNSPod' \
+          aliyun 'Alibaba Cloud DNS')
+        DEFAULT_KEY_TYPE=$(prompt_select 'Default key type' "$DEFAULT_KEY_TYPE" \
+          ec-256 'ECDSA P-256' \
+          rsa-2048 'RSA 2048' \
+          rsa-3072 'RSA 3072' \
+          rsa-4096 'RSA 4096')
         CERT_DIR=$(prompt_value 'Certificate directory' "$CERT_DIR")
-        AUTO_RENEW=$(prompt_value 'Auto renewal true/false' "$AUTO_RENEW")
-        NOTIFY_ENABLED=$(prompt_value 'Notifications true/false' "$NOTIFY_ENABLED")
-        NOTIFY_LEVEL=$(prompt_value 'Notification level 0-3' "$NOTIFY_LEVEL")
+        AUTO_RENEW=$(prompt_select 'Auto renewal' "$AUTO_RENEW" \
+          true 'Enabled' \
+          false 'Disabled')
+        NOTIFY_ENABLED=$(prompt_select 'Notifications' "$NOTIFY_ENABLED" \
+          true 'Enabled' \
+          false 'Disabled')
+        NOTIFY_LEVEL=$(prompt_select 'Notification level' "$NOTIFY_LEVEL" \
+          0 'Disabled' \
+          1 'Errors only' \
+          2 'Warnings and errors' \
+          3 'All events')
         config_write || true
         pause_screen
         ;;
@@ -150,7 +167,9 @@ main_menu() {
       5)
         local domain revoke_choice
         domain=$(prompt_value 'Domain')
-        revoke_choice=$(prompt_value 'Also revoke the certificate true/false' 'false')
+        revoke_choice=$(prompt_select 'Also revoke the certificate at the CA?' false \
+          false 'No' \
+          true 'Yes')
         cert_remove "$domain" "$revoke_choice" || true
         pause_screen
         ;;
