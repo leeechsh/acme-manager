@@ -150,7 +150,7 @@ main_menu() {
 
     menu_choice 'Choose an action [0-11]:' || break
     case "$MENU_CHOICE" in
-      1) cert_issue || true; pause_screen;;
+      1) cert_issue --interactive || true; pause_screen;;
       2) cert_list || true; pause_screen;;
       3)
         local domain

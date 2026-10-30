@@ -11,12 +11,13 @@ cert_key_args() {
 }
 
 cert_issue() {
-  local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 wildcard=1 domains=() domain value
+  local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 wildcard=1 interactive=0 domains=() domain value
   while (($#)); do
     case "$1" in
       -d|--domain) domains+=("$2"); shift 2;;
       --domains) IFS=',' read -r -a domains <<<"$2"; shift 2;;
       --no-wildcard) wildcard=0; shift;;
+      --interactive) interactive=1; shift;;
       --dns) provider="$2"; shift 2;;
       --ca|--server) ca="$2"; shift 2;;
       --key-type) key_type="$2"; shift 2;;
@@ -39,6 +40,20 @@ cert_issue() {
   done
   if (( wildcard )) && ((${#domains[@]} == 1)) && [[ "${domains[0]}" != \*.* ]]; then
     domains+=("*.${domains[0]}")
+  fi
+  if (( interactive )); then
+    provider=$(prompt_select 'Select a DNS provider' "$provider" \
+      cloudflare 'Cloudflare' \
+      dnspod 'Tencent DNSPod' \
+      aliyun 'Alibaba Cloud DNS') || return 1
+    ca=$(prompt_select 'Select a certificate authority' "$ca" \
+      letsencrypt "Let's Encrypt" \
+      zerossl 'ZeroSSL') || return 1
+    key_type=$(prompt_select 'Select a key type' "$key_type" \
+      ec-256 'ECDSA P-256' \
+      rsa-2048 'RSA 2048' \
+      rsa-3072 'RSA 3072' \
+      rsa-4096 'RSA 4096') || return 1
   fi
   valid_choice "$provider" cloudflare dnspod aliyun || { error 'Invalid DNS provider'; return 1; }
   valid_choice "$ca" letsencrypt zerossl || { error 'Invalid CA'; return 1; }
@@ -176,7 +191,7 @@ cert_menu() {
     menu_choice 'Choose an action [0-6]:' || return 0
     local domain revoke
     case "$MENU_CHOICE" in
-      1) cert_issue || true; pause_screen;;
+      1) cert_issue --interactive || true; pause_screen;;
       2) cert_list || true; pause_screen;;
       3) domain=$(prompt_value 'Domain'); cert_info "$domain" || true; pause_screen;;
       4) domain=$(prompt_value 'Domain (leave empty to renew all)' ''); if [[ -n "$domain" ]]; then cert_renew --domain "$domain" || true; else cert_renew --all || true; fi; pause_screen;;
