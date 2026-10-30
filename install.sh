@@ -27,8 +27,9 @@ fi
 
 PREFIX=${PREFIX:-/usr/local}
 CONFIG_DIR=${CONFIG_DIR:-/etc/acme-manager}
-DEST=$PREFIX/lib/acme-manager
+DEST=$PREFIX/acme-manager
 BIN=$PREFIX/bin/acme-manager
+LIB_LINK=$PREFIX/lib/acme-manager
 
 usage() {
   cat <<USAGE
@@ -81,6 +82,11 @@ if [ "$MODE" = uninstall ]; then
     exit 1
   fi
   rm -f "$BIN"
+  if [ -L "$LIB_LINK" ]; then
+    rm -f "$LIB_LINK"
+  elif [ -d "$LIB_LINK" ] && [ "$LIB_LINK" != "$DEST" ]; then
+    rm -rf "$LIB_LINK"
+  fi
   rm -rf "$DEST"
   echo "已卸载 ACME Manager；保留 $CONFIG_DIR 和 acme.sh 数据。"
   exit 0
@@ -120,6 +126,11 @@ mkdir -p "$DEST" "$PREFIX/bin" "$CONFIG_DIR"
 cp -R "$SOURCE_DIR/acme-manager.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR/lib" "$SOURCE_DIR/config.conf.example" "$DEST/"
 chmod 755 "$DEST/acme-manager.sh" "$DEST/install.sh" "$DEST/lib"/*.sh
 ln -sfn "$DEST/acme-manager.sh" "$BIN"
+if [ -e "$LIB_LINK" ] && [ ! -L "$LIB_LINK" ] && [ "$LIB_LINK" != "$DEST" ]; then
+  rm -rf "$LIB_LINK"
+fi
+mkdir -p "$PREFIX/lib"
+ln -sfn "$DEST" "$LIB_LINK"
 printf 'PREFIX=%s\nCONFIG_DIR=%s\nREPO_SLUG=%s\nREPO_REF=%s\n' \
   "$PREFIX" "$CONFIG_DIR" "$REPO_SLUG" "$REPO_REF" >"$DEST/.install-meta"
 chmod 600 "$DEST/.install-meta"
@@ -130,9 +141,11 @@ if [ ! -e "$CONFIG_DIR/config.conf" ]; then
 fi
 
 if [ "$MODE" = update ]; then
-  echo "ACME Manager 已更新: $BIN"
+  echo "ACME Manager 已更新: $DEST"
 else
-  echo "ACME Manager 已安装到 $BIN"
+  echo "ACME Manager 已安装到 $DEST"
 fi
+echo "命令链接: $BIN"
+echo "库目录链接: $LIB_LINK"
 echo "配置文件: $CONFIG_DIR/config.conf"
 echo '配置、账户、证书和 acme.sh Cron 不会因更新或卸载管理器代码而删除。'

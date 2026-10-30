@@ -36,7 +36,14 @@ sudo acme-manager update
 curl -fsSL https://raw.githubusercontent.com/leeechsh/acme-manager/main/install.sh | sudo sh
 ```
 
-更新只替换 `/usr/local/lib/acme-manager` 中的程序文件，并保留 `/etc/acme-manager/config.conf`、acme.sh 原生账户、证书和 Cron。也可以通过 `REPO_SLUG`、`REPO_REF`、`PREFIX` 和 `CONFIG_DIR` 覆盖默认仓库与安装位置。
+程序文件统一安装到 `/usr/local/acme-manager/`，并创建以下软链接：
+
+```text
+/usr/local/bin/acme-manager -> /usr/local/acme-manager/acme-manager.sh
+/usr/local/lib/acme-manager -> /usr/local/acme-manager/
+```
+
+更新只替换 `/usr/local/acme-manager/` 中的程序文件，并保留 `/etc/acme-manager/config.conf`、acme.sh 原生账户、证书和 Cron。也可以通过 `REPO_SLUG`、`REPO_REF`、`PREFIX` 和 `CONFIG_DIR` 覆盖默认仓库与安装位置。
 
 用户目录安装示例：
 

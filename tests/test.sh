@@ -60,4 +60,15 @@ assert_contains "$ACME_HOME/account.conf" "export CF_Token='token-value'"
 ! grep -Fq token-value "$ACME_MANAGER_CONFIG"
 
 "$ROOT/acme-manager.sh" doctor >/dev/null || true
+
+PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" >/dev/null
+[[ -f "$TMP/prefix/acme-manager/acme-manager.sh" ]]
+[[ -L "$TMP/prefix/bin/acme-manager" ]]
+[[ "$(readlink "$TMP/prefix/bin/acme-manager")" == "$TMP/prefix/acme-manager/acme-manager.sh" ]]
+[[ -L "$TMP/prefix/lib/acme-manager" ]]
+[[ "$(readlink "$TMP/prefix/lib/acme-manager")" == "$TMP/prefix/acme-manager" ]]
+PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" --uninstall >/dev/null
+[[ ! -e "$TMP/prefix/acme-manager" ]]
+[[ ! -e "$TMP/prefix/bin/acme-manager" ]]
+
 printf 'PASS: ACME Manager smoke tests\n'
