@@ -228,31 +228,72 @@ cert_list() {
 
 cert_info() { local domain="$1"; valid_domain "$domain" || return 1; run_acme --info --domain "$domain"; }
 
-cert_deployment_summary() {
-  local file domain cert key fullchain ca target_dir stem extra_key extra_fullchain
-  [[ -d "$ACME_HOME" ]] || return 0
-  printf '\n%sDeployment Paths%s\n' "$UI_ACCENT" "$UI_RESET"
-  while IFS= read -r -d '' file; do
-    domain=$(awk -F= '$1=="Le_Domain" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
-    [[ -n "$domain" ]] || continue
-    cert=$(awk -F= '$1=="Le_RealCertPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
-    key=$(awk -F= '$1=="Le_RealKeyPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
-    fullchain=$(awk -F= '$1=="Le_RealFullChainPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
-    ca=$(awk -F= '$1=="Le_RealCACertPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
-    printf '  %s%s%s\n' "$UI_PRIMARY" "$domain" "$UI_RESET"
-    printf '    %-10s %s\n' 'cert' "${cert:--}"
-    printf '    %-10s %s\n' 'key' "${key:--}"
-    printf '    %-10s %s\n' 'fullchain' "${fullchain:--}"
-    printf '    %-10s %s\n' 'ca' "${ca:--}"
-    if [[ -n "$cert" && "$cert" != '-' ]]; then
-      target_dir=$(dirname "$cert")
+cert_webdav_deployment_summary() {
+  local metadata root rows row domain directory source stem
+  local cert key fullchain ca extra_key extra_fullchain
+  local -A seen=()
+  while IFS=$'\t' read -r metadata root; do
+    [[ -f "$metadata" ]] || continue
+    rows=$(cert_meta_rows "$metadata" "$root")
+    [[ -n "$rows" ]] || continue
+    while IFS= read -r row; do
+      domain="${row%%$'\t'*}"
+      directory="${row##*$'\t'}"
+      [[ -f "$directory/cert.pem" ]] || continue
+      source=$(cert_metadata_source "$directory")
+      [[ "$source" == 'WebDAV remote' ]] || continue
+      [[ -n "${seen[$directory]+set}" ]] && continue
+      seen["$directory"]=1
       stem=$(deploy_extra_stem "$domain")
-      extra_key="$target_dir/$stem.key"
-      extra_fullchain="$target_dir/$stem.pem"
+      cert="$directory/cert.pem"
+      key="$directory/privkey.pem"
+      fullchain="$directory/fullchain.pem"
+      ca="$directory/ca.pem"
+      extra_key="$directory/$stem.key"
+      extra_fullchain="$directory/$stem.pem"
+      printf '  %s%s%s %s[%s]%s\n' "$UI_PRIMARY" "$domain" "$UI_RESET" "$UI_MUTED" "$source" "$UI_RESET"
+      printf '    %-10s %s\n' 'cert' "$cert"
+      printf '    %-10s %s\n' 'key' "$key"
+      printf '    %-10s %s\n' 'fullchain' "$fullchain"
+      printf '    %-10s %s\n' 'ca' "$ca"
       printf '    %-10s %s\n' 'key-copy' "$extra_key"
       printf '    %-10s %s\n' 'chain-copy' "$extra_fullchain"
+    done <<<"$rows"
+  done < <(
+    printf '%s\t%s\n' "$CERT_DIR/meta.json" "$CERT_DIR"
+    if [[ "$AGENT_TARGET_DIR/meta.json" != "$CERT_DIR/meta.json" ]]; then
+      printf '%s\t%s\n' "$AGENT_TARGET_DIR/meta.json" "$AGENT_TARGET_DIR"
     fi
-  done < <(find "$ACME_HOME" -mindepth 2 -maxdepth 2 -type f -name '*.conf' -print0 2>/dev/null)
+  )
+}
+
+cert_deployment_summary() {
+  local file domain cert key fullchain ca target_dir stem extra_key extra_fullchain
+  printf '\n%sDeployment Paths%s\n' "$UI_ACCENT" "$UI_RESET"
+  if [[ -d "$ACME_HOME" ]]; then
+    while IFS= read -r -d '' file; do
+      domain=$(awk -F= '$1=="Le_Domain" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
+      [[ -n "$domain" ]] || continue
+      cert=$(awk -F= '$1=="Le_RealCertPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
+      key=$(awk -F= '$1=="Le_RealKeyPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
+      fullchain=$(awk -F= '$1=="Le_RealFullChainPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
+      ca=$(awk -F= '$1=="Le_RealCACertPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
+      printf '  %s%s%s\n' "$UI_PRIMARY" "$domain" "$UI_RESET"
+      printf '    %-10s %s\n' 'cert' "${cert:--}"
+      printf '    %-10s %s\n' 'key' "${key:--}"
+      printf '    %-10s %s\n' 'fullchain' "${fullchain:--}"
+      printf '    %-10s %s\n' 'ca' "${ca:--}"
+      if [[ -n "$cert" && "$cert" != '-' ]]; then
+        target_dir=$(dirname "$cert")
+        stem=$(deploy_extra_stem "$domain")
+        extra_key="$target_dir/$stem.key"
+        extra_fullchain="$target_dir/$stem.pem"
+        printf '    %-10s %s\n' 'key-copy' "$extra_key"
+        printf '    %-10s %s\n' 'chain-copy' "$extra_fullchain"
+      fi
+    done < <(find "$ACME_HOME" -mindepth 2 -maxdepth 2 -type f -name '*.conf' -print0 2>/dev/null)
+  fi
+  cert_webdav_deployment_summary
 }
 
 cert_renew() {
