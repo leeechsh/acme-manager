@@ -155,9 +155,26 @@ cert_meta_rows() {
   ' "$meta"
 }
 
+cert_native_record_exists() {
+  local directory="$1" stem
+  stem=$(basename "$directory")
+  [[ -f "$ACME_HOME/${stem}_ecc/${stem}.conf" || -f "$ACME_HOME/$stem/$stem.conf" ]]
+}
+
+cert_metadata_source() {
+  local directory="$1"
+  if cert_native_record_exists "$directory"; then
+    printf 'Local acme.sh\n'
+  elif webdav_mode_allows_download; then
+    printf 'WebDAV remote\n'
+  else
+    printf 'Managed files\n'
+  fi
+}
+
 cert_deployed_list() {
-  local metadata root rows filtered='' directory row
-  printf '\n%sManaged certificate files%s\n' "$UI_ACCENT" "$UI_RESET"
+  local metadata root rows filtered='' directory row source
+  printf '\n%sManaged / synchronized certificate files%s\n' "$UI_ACCENT" "$UI_RESET"
   while IFS=$'\t' read -r metadata root; do
     [[ -f "$metadata" ]] || continue
     rows=$(cert_meta_rows "$metadata" "$root")
@@ -165,7 +182,8 @@ cert_deployed_list() {
     while IFS= read -r row; do
       directory="${row##*$'\t'}"
       [[ -f "$directory/cert.pem" ]] || continue
-      filtered+="$row"$'\n'
+      source=$(cert_metadata_source "$directory")
+      filtered+="$source"$'\t'"$row"$'\n'
     done <<<"$rows"
   done < <(
     printf '%s\t%s\n' "$CERT_DIR/meta.json" "$CERT_DIR"
@@ -175,7 +193,7 @@ cert_deployed_list() {
   )
   if [[ -n "$filtered" ]]; then
     local table formatted
-    table=$(printf '%s\n%s' 'Domain	Key type	SAN domains	CA	Issued	Expires	Deployment directory' "$filtered")
+    table=$(printf '%s\n%s' 'Source	Domain	Key type	SAN domains	CA	Issued	Expires	Deployment directory' "$filtered")
     formatted=$(ui_table "$table")
     printf '%s\n' "$formatted"
   else
@@ -188,6 +206,7 @@ cert_list() {
   raw=$(mktemp "${TMPDIR:-/tmp}/acme-manager-list.XXXXXX") || return 1
   if acme_command >/dev/null 2>&1; then
     native_available=1
+    printf '\n%sNative acme.sh certificates (local)%s\n' "$UI_ACCENT" "$UI_RESET"
     if run_acme --list >"$raw" 2>&1; then
       formatted=$(awk 'NF { for (i=1; i<=NF; i++) printf "%s%s", $i, (i==NF ? "\n" : "\t") }' "$raw")
       formatted=$(ui_table "$formatted")
