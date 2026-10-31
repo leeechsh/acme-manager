@@ -145,6 +145,8 @@ WEBDAV_NODE_ID="hub-01"
 
 `meta.json` 包含 schema 版本、单调递增的 `revision`、节点 ID、域名、证书目录、密钥类型、CA、签发时间、过期时间和 SHA-256 指纹，不包含私钥内容。上传前会读取远端版本；远端存在同版本同域名但指纹不同的情况时会报告冲突并停止覆盖。acme.sh 自动续期时，部署 Reload Hook 也会按照当前同步模式处理元数据。
 
+证书列表会同时读取 acme.sh 原生证书记录，以及 `CERT_DIR` 和 `AGENT_TARGET_DIR` 下的 `meta.json`。因此下载模式的设备即使没有安装 acme.sh，也能在主菜单的 `2 List certificates` 中看到已同步证书、有效期、CA 和部署目录。
+
 ## 证书 Agent
 
 Certificate Agent 已合并到 `acme-manager` 主程序，不需要安装 acme.sh，也不再使用独立的 `acme-agent` 命令或 `agent.conf`。在其它设备上仍然使用同一个配置文件 `/usr/local/acme-manager/etc/config.conf`，将 `WEBDAV_SYNC_MODE` 设置为 `download`：

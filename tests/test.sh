@@ -170,6 +170,11 @@ printf 'WEBDAV_SYNC_MODE="download"\n' >>"$ACME_MANAGER_CONFIG"
 AGENT_REMOTE_META="$TMP/certs/meta.json" "$ROOT/acme-manager.sh" agent sync >/dev/null
 [[ -f "$TMP/agent-certs/meta.json" ]]
 [[ -f "$TMP/agent-certs/interactive.example.com/fullchain.pem" ]]
+ACME_MANAGER_CERT_DIR="$TMP/agent-certs" "$ROOT/acme-manager.sh" list >"$TMP/agent-list.txt"
+assert_contains "$TMP/agent-list.txt" 'interactive.example.com'
+assert_contains "$TMP/agent-list.txt" "$TMP/agent-certs/interactive.example.com"
+env -u ACME_SH_BIN ACME_MANAGER_CERT_DIR="$TMP/agent-certs" "$ROOT/acme-manager.sh" list >"$TMP/agent-list-no-acme.txt"
+assert_contains "$TMP/agent-list-no-acme.txt" 'interactive.example.com'
 cat >>"$ACME_MANAGER_CONFIG" <<EOF_BIDIRECTIONAL
 WEBDAV_SYNC_MODE="bidirectional"
 AGENT_TARGET_DIR="$TMP/certs"

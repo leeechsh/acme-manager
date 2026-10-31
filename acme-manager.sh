@@ -52,7 +52,7 @@ Certificates:
   issue --domain example.com [--domain '*.example.com'] [--no-wildcard] [--force] [--dns cloudflare]
         [--ca letsencrypt|zerossl] [--key-type ec-256|rsa-2048|rsa-3072|rsa-4096]
         [--email ops@example.com] [--staging]
-  list                              List acme.sh certificates
+  list                              List native and synchronized certificates
   info --domain example.com         Show certificate details
   renew --domain example.com [--force] [--key-type ...]
   renew --all [--force]

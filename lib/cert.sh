@@ -112,22 +112,99 @@ cert_issue_and_deploy() {
   deploy_cert "$CERT_LAST_DOMAIN" "$CERT_LAST_KEY_TYPE"
 }
 
-cert_list() {
-  local raw formatted header
-  raw=$(mktemp "${TMPDIR:-/tmp}/acme-manager-list.XXXXXX") || return 1
-  if ! run_acme --list >"$raw" 2>&1; then
-    cat "$raw"
-    rm -f "$raw"
-    error 'Unable to read the certificate list'
-    return 1
+cert_meta_rows() {
+  local meta="$1" root="$2"
+  [[ -f "$meta" ]] || return 0
+  awk -F'"' -v root="$root" '
+    function reset_entry() {
+      domain=""; directory=""; domains=""; key_type=""; ca=""
+      issued_at=""; expires_at=""
+    }
+    /"domain"[[:space:]]*:/ {
+      domain=$4
+    }
+    /"directory"[[:space:]]*:/ {
+      directory=$4
+    }
+    /"domains"[[:space:]]*:/ {
+      domains=$0
+      sub(/^[^[]*\[/, "", domains)
+      sub(/\].*$/, "", domains)
+      gsub(/"/, "", domains)
+      gsub(/[[:space:]]+/, "", domains)
+    }
+    /"key_type"[[:space:]]*:/ {
+      key_type=$4
+    }
+    /"ca"[[:space:]]*:/ {
+      ca=$4
+    }
+    /"issued_at"[[:space:]]*:/ {
+      issued_at=$4
+    }
+    /"expires_at"[[:space:]]*:/ {
+      expires_at=$4
+    }
+    /"files"[[:space:]]*:/ {
+      if (domain != "" && directory != "") {
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s/%s\n",
+          domain, key_type, domains, ca, issued_at, expires_at, root, directory
+      }
+      reset_entry()
+    }
+  ' "$meta"
+}
+
+cert_deployed_list() {
+  local metadata root rows filtered='' directory row
+  printf '\n%sManaged certificate files%s\n' "$UI_ACCENT" "$UI_RESET"
+  while IFS=$'\t' read -r metadata root; do
+    [[ -f "$metadata" ]] || continue
+    rows=$(cert_meta_rows "$metadata" "$root")
+    [[ -n "$rows" ]] || continue
+    while IFS= read -r row; do
+      directory="${row##*$'\t'}"
+      [[ -f "$directory/cert.pem" ]] || continue
+      filtered+="$row"$'\n'
+    done <<<"$rows"
+  done < <(
+    printf '%s\t%s\n' "$CERT_DIR/meta.json" "$CERT_DIR"
+    if [[ "$AGENT_TARGET_DIR/meta.json" != "$CERT_DIR/meta.json" ]]; then
+      printf '%s\t%s\n' "$AGENT_TARGET_DIR/meta.json" "$AGENT_TARGET_DIR"
+    fi
+  )
+  if [[ -n "$filtered" ]]; then
+    local table formatted
+    table=$(printf '%s\n%s' 'Domain	Key type	SAN domains	CA	Issued	Expires	Deployment directory' "$filtered")
+    formatted=$(ui_table "$table")
+    printf '%s\n' "$formatted"
+  else
+    ui_hint 'No managed certificate metadata found'
   fi
-  formatted=$(awk 'NF { for (i=1; i<=NF; i++) printf "%s%s", $i, (i==NF ? "\n" : "\t") }' "$raw")
-  formatted=$(ui_table "$formatted")
-  header=$(printf '%s\n' "$formatted" | head -1)
-  [[ -n "$header" ]] && printf '%s%s%s\n' "$UI_PRIMARY" "$header" "$UI_RESET"
-  printf '%s\n' "$formatted" | tail -n +2
+}
+
+cert_list() {
+  local raw formatted header native_available=0
+  raw=$(mktemp "${TMPDIR:-/tmp}/acme-manager-list.XXXXXX") || return 1
+  if acme_command >/dev/null 2>&1; then
+    native_available=1
+    if run_acme --list >"$raw" 2>&1; then
+      formatted=$(awk 'NF { for (i=1; i<=NF; i++) printf "%s%s", $i, (i==NF ? "\n" : "\t") }' "$raw")
+      formatted=$(ui_table "$formatted")
+      header=$(printf '%s\n' "$formatted" | head -1)
+      [[ -n "$header" ]] && printf '%s%s%s\n' "$UI_PRIMARY" "$header" "$UI_RESET"
+      printf '%s\n' "$formatted" | tail -n +2
+    else
+      warn 'Unable to read the native acme.sh certificate list; showing managed files only'
+      cat "$raw"
+    fi
+  else
+    ui_hint 'acme.sh is not installed; showing managed certificate files only'
+  fi
   rm -f "$raw"
+  cert_deployed_list
   cert_deployment_summary
+  (( native_available )) || return 0
 }
 
 cert_info() { local domain="$1"; valid_domain "$domain" || return 1; run_acme --info --domain "$domain"; }
