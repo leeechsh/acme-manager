@@ -8,8 +8,24 @@ webdav_base_url() {
   printf '%s\n' "${WEBDAV_URL%/}"
 }
 
+webdav_sync_mode() {
+  if [[ "$WEBDAV_ENABLED" != true || "${WEBDAV_SYNC_MODE:-upload}" == disabled ]]; then
+    printf 'disabled\n'
+  else
+    printf '%s\n' "${WEBDAV_SYNC_MODE:-upload}"
+  fi
+}
+
+webdav_mode_allows_upload() {
+  [[ "$(webdav_sync_mode)" == upload || "$(webdav_sync_mode)" == bidirectional ]]
+}
+
+webdav_mode_allows_download() {
+  [[ "$(webdav_sync_mode)" == download || "$(webdav_sync_mode)" == bidirectional ]]
+}
+
 webdav_validate() {
-  [[ "$WEBDAV_ENABLED" == true ]] || return 0
+  [[ "$(webdav_sync_mode)" != disabled ]] || return 0
   [[ -n "$WEBDAV_URL" ]] || { error 'WebDAV URL is not configured'; return 1; }
   [[ "$WEBDAV_URL" =~ ^https?://[^[:space:]]+$ ]] || { error 'WebDAV URL must start with http:// or https://'; return 1; }
   [[ -n "$WEBDAV_USERNAME" ]] || { error 'WebDAV username is not configured'; return 1; }
@@ -45,6 +61,21 @@ webdav_request() {
   return "$rc"
 }
 
+webdav_get_remote_meta() {
+  local url="$1" output="$2" netrc code rc
+  netrc=$(webdav_netrc "$url") || return 1
+  code=$(curl --silent --show-error --location --netrc-file "$netrc" -o "$output" -w '%{http_code}' "$url")
+  rc=$?
+  rm -f "$netrc"
+  (( rc == 0 )) || return 1
+  if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
+    return 0
+  fi
+  [[ "$code" == 404 ]] && return 2
+  error "WebDAV metadata request returned HTTP $code"
+  return 1
+}
+
 webdav_collection() {
   local url="$1" code
   code=$(webdav_request "$url" -X MKCOL -o /dev/null -w '%{http_code}' 2>/dev/null || true)
@@ -57,29 +88,38 @@ webdav_put() {
 }
 
 webdav_status() {
-  printf 'WebDAV enabled: %s\n' "$WEBDAV_ENABLED"
+  printf 'WebDAV mode: %s\n' "$(webdav_sync_mode)"
   printf 'WebDAV URL: %s\n' "${WEBDAV_URL:-not configured}"
   printf 'WebDAV username: %s\n' "${WEBDAV_USERNAME:-not configured}"
+  printf 'WebDAV node ID: %s\n' "${WEBDAV_NODE_ID:-auto}"
   if [[ -n "$(webdav_password)" ]]; then
     printf 'WebDAV password: configured\n'
   else
     printf 'WebDAV password: not configured\n'
   fi
-  if [[ "$WEBDAV_ENABLED" == true ]]; then
+  if [[ "$(webdav_sync_mode)" != disabled ]]; then
     webdav_validate || return 1
     success 'WebDAV configuration is valid'
   fi
 }
 
 webdav_configure() {
-  WEBDAV_ENABLED=$(prompt_select 'Enable WebDAV synchronization' "$WEBDAV_ENABLED" \
-    true 'Enabled' \
-    false 'Disabled') || return 1
-  WEBDAV_URL=$(prompt_value 'WebDAV collection URL' "${WEBDAV_URL:-}")
-  WEBDAV_USERNAME=$(prompt_value 'WebDAV username' "${WEBDAV_USERNAME:-}")
-  local password
-  password=$(prompt_value 'WebDAV password (empty keeps current password)') || return 1
-  [[ -n "$password" ]] && WEBDAV_PASSWORD="$password"
+  WEBDAV_SYNC_MODE=$(prompt_select 'Synchronization mode' "${WEBDAV_SYNC_MODE:-upload}" \
+    disabled 'Disabled' \
+    upload 'Upload only' \
+    download 'Download only' \
+    bidirectional 'Bidirectional') || return 1
+  if [[ "$WEBDAV_SYNC_MODE" == disabled ]]; then
+    WEBDAV_ENABLED='false'
+  else
+    WEBDAV_ENABLED='true'
+    WEBDAV_URL=$(prompt_value 'WebDAV collection URL' "${WEBDAV_URL:-}")
+    WEBDAV_USERNAME=$(prompt_value 'WebDAV username' "${WEBDAV_USERNAME:-}")
+    local password
+    password=$(prompt_value 'WebDAV password (empty keeps current password)') || return 1
+    [[ -n "$password" ]] && WEBDAV_PASSWORD="$password"
+    WEBDAV_NODE_ID=$(prompt_value 'Sync node ID (empty uses automatic ID)' "${WEBDAV_NODE_ID:-}")
+  fi
   config_write || return 1
   if [[ -f "$(account_conf_path)" ]]; then
     account_unset_var WEBDAV_PASSWORD >/dev/null 2>&1 || true
@@ -88,19 +128,64 @@ webdav_configure() {
 }
 
 webdav_test() {
-  [[ "$WEBDAV_ENABLED" == true ]] || { error 'Enable WebDAV synchronization first'; return 1; }
+  [[ "$(webdav_sync_mode)" != disabled ]] || { error 'Enable a WebDAV synchronization mode first'; return 1; }
   webdav_validate || return 1
   webdav_request "$(webdav_base_url)" -X OPTIONS -o /dev/null
   success 'WebDAV endpoint is reachable'
 }
 
+webdav_meta_guard() {
+  local local_file="$1" remote_file="$2" remote_domain remote_dir remote_fingerprint local_fingerprint
+  local local_revision remote_revision local_node remote_node
+  local_revision=$(meta_revision "$local_file")
+  remote_revision=$(meta_revision "$remote_file")
+  local_node=$(meta_node_id "$local_file")
+  remote_node=$(meta_node_id "$remote_file")
+  [[ -f "$remote_file" ]] || return 0
+  while IFS=$'\t' read -r remote_domain remote_dir remote_fingerprint; do
+    [[ -n "$remote_dir" ]] || continue
+    local_fingerprint=$(agent_meta_entries "$local_file" | awk -F '\t' -v wanted_dir="$remote_dir" '$2 == wanted_dir { print $3; exit }')
+    if ! agent_meta_entries "$local_file" | awk -F '\t' -v wanted_dir="$remote_dir" '$2 == wanted_dir { found=1 } END { exit(found ? 0 : 1) }'; then
+      error "Remote certificate is missing locally: $remote_dir; use bidirectional or download mode first"
+      return 1
+    fi
+    if [[ -n "$remote_fingerprint" && "$local_fingerprint" != "$remote_fingerprint" &&
+      ! ( "$local_revision" -gt "$remote_revision" ||
+        ( "$local_revision" == "$remote_revision" && -n "$local_node" && "$local_node" == "$remote_node" ) ) ]]; then
+      error "Certificate conflict detected for $remote_dir; same revision has different fingerprints"
+      return 1
+    fi
+  done < <(agent_meta_entries "$remote_file")
+}
+
 webdav_sync() {
-  local meta_file="${1:-}" base="${2:-}" dir domain file remote_dir
-  [[ "$WEBDAV_ENABLED" == true ]] || return 0
+  local meta_file="${1:-}" base="" dir domain file remote_dir remote_meta
+  local local_revision=0 remote_revision=0 next_revision=1
+  [[ "$(webdav_sync_mode)" == upload || "$(webdav_sync_mode)" == bidirectional ]] || return 0
   webdav_validate || return 1
   meta_file="${meta_file:-$CERT_DIR/meta.json}"
   base=$(webdav_base_url)
   [[ -f "$meta_file" ]] || { error "Metadata file not found: $meta_file"; return 1; }
+  remote_meta=$(mktemp "${TMPDIR:-/tmp}/acme-manager-remote-meta.XXXXXX") || return 1
+  if webdav_get_remote_meta "$(webdav_url_join "$base" meta.json)" "$remote_meta"; then
+    remote_revision=$(meta_revision "$remote_meta")
+    webdav_meta_guard "$meta_file" "$remote_meta" || { rm -f "$remote_meta"; return 1; }
+  else
+    local rc=$?
+    if (( rc != 2 )); then
+      rm -f "$remote_meta"
+      error 'Unable to read remote WebDAV metadata before upload'
+      return 1
+    fi
+  fi
+  local_revision=$(meta_revision "$meta_file")
+  if (( local_revision > remote_revision )); then
+    next_revision=$((local_revision + 1))
+  else
+    next_revision=$((remote_revision + 1))
+  fi
+  meta_update_version "$meta_file" "$next_revision" "$(webdav_node_id)" || { rm -f "$remote_meta"; return 1; }
+  rm -f "$remote_meta"
   webdav_collection "$base" || { error "Unable to create or access WebDAV collection: $base"; return 1; }
   while IFS= read -r -d '' dir; do
     domain=$(basename "$dir")
@@ -115,22 +200,22 @@ webdav_sync() {
       }
     done
   done < <(find "$CERT_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
-  webdav_put "$meta_file" "$(webdav_url_join "$base" "$(basename "$meta_file")")" || {
+  webdav_put "$meta_file" "$(webdav_url_join "$base" meta.json)" || {
     error 'WebDAV metadata upload failed'
     return 1
   }
-  success "WebDAV synchronization completed: $base"
+  success "WebDAV upload completed: $base (revision $next_revision)"
 }
 
 webdav_menu() {
   while true; do
-    menu_header 'WebDAV Synchronization' 'Upload deployed certificates and metadata'
+    menu_header 'WebDAV Synchronization' 'Configure upload, download or bidirectional synchronization'
     menu_home_status
     ui_section 'Actions'
-    ui_menu_item 1 'View WebDAV status' 'URL, account and connectivity settings'
-    ui_menu_item 2 'Configure WebDAV' 'Password is stored in the manager config'
+    ui_menu_item 1 'View WebDAV status' 'Mode, URL, node ID and connectivity settings'
+    ui_menu_item 2 'Configure WebDAV' 'Select upload, download or bidirectional mode'
     ui_menu_item 3 'Test WebDAV endpoint' 'Run an authenticated OPTIONS request'
-    ui_menu_item 4 'Sync certificates now' 'Generate metadata, then upload files and metadata'
+    ui_menu_item 4 'Synchronize now' 'Apply the configured synchronization mode'
     ui_menu_item 0 'Back'
     ui_footer
     menu_choice 'Choose an action [0-4]:' || return 0

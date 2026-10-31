@@ -72,9 +72,9 @@ Accounts and system:
   config show|write
   logs                              View manager logs
   webdav status|configure|test|sync
-                                  Manage WebDAV certificate synchronization
+                                  Configure WebDAV synchronization mode
   agent status|configure|sync|cron install|cron remove
-                                  Pull changed certificates from WebDAV
+                                  Apply download or bidirectional synchronization
   meta sync                        Regenerate certificate metadata and sync it
   update                            Update manager code from GitHub
   version

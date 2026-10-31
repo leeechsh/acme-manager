@@ -13,7 +13,7 @@ agent_log() {
 }
 
 agent_config_validate() {
-  [[ "$WEBDAV_ENABLED" == true ]] || { error 'Enable WebDAV synchronization before using the certificate agent'; return 1; }
+  webdav_mode_allows_download || { error 'Set WebDAV mode to download or bidirectional before pulling certificates'; return 1; }
   webdav_validate || return 1
   valid_abs_path "$AGENT_TARGET_DIR" || { error 'AGENT_TARGET_DIR must be an absolute path'; return 1; }
   valid_abs_path "$AGENT_LOG" || { error 'AGENT_LOG must be an absolute path'; return 1; }
@@ -48,26 +48,65 @@ agent_meta_has_entry() {
     '$2 == wanted_dir && $3 == wanted_fp { found=1 } END { exit(found ? 0 : 1) }'
 }
 
+agent_meta_has_conflict() {
+  local local_file="$1" remote_file="$2" domain directory fingerprint local_fingerprint
+  while IFS=$'\t' read -r domain directory fingerprint; do
+    [[ -n "$directory" ]] || continue
+    local_fingerprint=$(agent_meta_entries "$local_file" | awk -F '\t' -v wanted_dir="$directory" '$2 == wanted_dir { print $3; exit }')
+    [[ -z "$local_fingerprint" || -z "$fingerprint" || "$local_fingerprint" == "$fingerprint" ]] || return 0
+  done < <(agent_meta_entries "$remote_file")
+  return 1
+}
+
 agent_safe_name() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ && "$1" != *..* ]]
 }
 
-agent_sync() {
-  local remote_meta local_meta domain directory fingerprint file remote_dir changed=0
+agent_pull() {
+  local allow_missing=0 remote_meta local_meta domain directory fingerprint file remote_dir changed=0
+  local local_revision=0 remote_revision=0 local_node remote_node
+  [[ "${1:-}" == allow-missing ]] && allow_missing=1
   agent_config_validate || return 1
   mkdir -p "$AGENT_TARGET_DIR"
   remote_meta=$(agent_url_join "$WEBDAV_URL" meta.json)
   AGENT_TMP_META=$(mktemp "${TMPDIR:-/tmp}/acme-manager-agent-meta.XXXXXX") || return 1
   trap agent_cleanup EXIT
-  webdav_request "$remote_meta" -o "$AGENT_TMP_META" || {
+  if webdav_get_remote_meta "$remote_meta" "$AGENT_TMP_META"; then
+    :
+  else
+    local rc=$?
+    if (( rc == 2 && allow_missing )); then
+      agent_cleanup
+      trap - EXIT
+      printf 'Remote metadata is not available; nothing to download\n'
+      return 0
+    fi
     error 'Unable to download WebDAV metadata'
     return 1
-  }
+  fi
   local_meta="$AGENT_TARGET_DIR/meta.json"
   if [[ -f "$local_meta" ]] && cmp -s "$AGENT_TMP_META" "$local_meta"; then
     printf 'Certificate metadata unchanged\n'
     agent_log 'metadata unchanged'
     return 0
+  fi
+  local_revision=$(meta_revision "$local_meta")
+  remote_revision=$(meta_revision "$AGENT_TMP_META")
+  local_node=$(meta_node_id "$local_meta")
+  remote_node=$(meta_node_id "$AGENT_TMP_META")
+  if (( remote_revision < local_revision )); then
+    printf 'Remote metadata revision %s is older than local revision %s; keeping local certificates\n' "$remote_revision" "$local_revision"
+    agent_log "remote revision $remote_revision older than local revision $local_revision"
+    return 0
+  fi
+  if (( remote_revision == local_revision )) && [[ -f "$local_meta" ]] && agent_meta_has_conflict "$local_meta" "$AGENT_TMP_META"; then
+    if [[ -n "$local_node" && "$local_node" == "$remote_node" ]]; then
+      printf 'Local metadata has same-node changes at revision %s; keeping local certificates\n' "$local_revision"
+      agent_log "same-node changes at revision $local_revision kept locally"
+      return 0
+    fi
+    error "Certificate conflict detected at revision $remote_revision; resolve the same-domain change before syncing"
+    return 1
   fi
   AGENT_ENTRIES=$(mktemp "${TMPDIR:-/tmp}/acme-manager-agent-entries.XXXXXX") || return 1
   agent_meta_entries "$AGENT_TMP_META" >"$AGENT_ENTRIES"
@@ -110,8 +149,16 @@ agent_sync() {
   agent_log "certificates synchronized into $AGENT_TARGET_DIR"
 }
 
+agent_sync() {
+  case "$(webdav_sync_mode)" in
+    download) agent_pull;;
+    bidirectional) meta_sync;;
+    *) error 'Set WebDAV mode to download or bidirectional before using agent sync'; return 1;;
+  esac
+}
+
 agent_status() {
-  printf 'Agent enabled: %s\n' "$WEBDAV_ENABLED"
+  printf 'Agent sync mode: %s\n' "$(webdav_sync_mode)"
   printf 'Config file: %s\n' "$CONFIG_FILE"
   printf 'WebDAV URL: %s\n' "${WEBDAV_URL:-not configured}"
   printf 'WebDAV username: %s\n' "${WEBDAV_USERNAME:-not configured}"
@@ -158,11 +205,11 @@ agent_cron_remove() {
 
 agent_menu() {
   while true; do
-    menu_header 'Certificate Agent' 'Pull changed certificates from the shared WebDAV store'
+    menu_header 'Certificate Agent' 'Apply download or bidirectional WebDAV synchronization'
     menu_home_status
     ui_section 'Agent'
     ui_menu_item 1 'View agent status' 'Shared WebDAV settings and local target'
-    ui_menu_item 2 'Sync certificates now' 'Download metadata and changed certificate directories'
+    ui_menu_item 2 'Sync now' 'Apply the configured download direction'
     ui_menu_item 3 'Configure agent' 'Target directory, reload command and Cron'
     ui_menu_item 4 'Install agent Cron' 'Run the pull agent on a schedule'
     ui_menu_item 5 'Remove agent Cron' 'Keep certificates and remove only the job'

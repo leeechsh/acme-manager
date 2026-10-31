@@ -164,11 +164,57 @@ assert_contains "$FAKE_CURL_LOG" 'meta.json'
 assert_contains "$FAKE_CURL_LOG" 'interactive.example.com/cert.pem'
 ! grep -Fq 'sync#secret' "$FAKE_CURL_LOG"
 [[ ! -e "$ACME_HOME/account.conf" ]]
+grep -Fq '"revision": 1' "$TMP/certs/meta.json"
 
+printf 'WEBDAV_SYNC_MODE="download"\n' >>"$ACME_MANAGER_CONFIG"
 AGENT_REMOTE_META="$TMP/certs/meta.json" "$ROOT/acme-manager.sh" agent sync >/dev/null
 [[ -f "$TMP/agent-certs/meta.json" ]]
 [[ -f "$TMP/agent-certs/interactive.example.com/fullchain.pem" ]]
+cat >>"$ACME_MANAGER_CONFIG" <<EOF_BIDIRECTIONAL
+WEBDAV_SYNC_MODE="bidirectional"
+AGENT_TARGET_DIR="$TMP/certs"
+EOF_BIDIRECTIONAL
+AGENT_REMOTE_META="$TMP/certs/meta.json" "$ROOT/acme-manager.sh" agent sync >/dev/null
+grep -Fq '"revision": 2' "$TMP/certs/meta.json"
 printf '11\n0\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
+
+cat >>"$ACME_MANAGER_CONFIG" <<EOF_CONFLICT
+WEBDAV_SYNC_MODE="download"
+AGENT_TARGET_DIR="$TMP/conflict-certs"
+EOF_CONFLICT
+mkdir -p "$TMP/conflict-certs/example.com"
+cat >"$TMP/conflict-certs/meta.json" <<'EOF_LOCAL_META'
+{
+  "schema_version": 2,
+  "revision": 7,
+  "node_id": "local",
+  "certificates": [
+    {
+      "domain": "example.com",
+      "directory": "example.com",
+      "fingerprint_sha256": "local"
+    }
+  ]
+}
+EOF_LOCAL_META
+cat >"$TMP/remote-conflict-meta.json" <<'EOF_REMOTE_META'
+{
+  "schema_version": 2,
+  "revision": 7,
+  "node_id": "remote",
+  "certificates": [
+    {
+      "domain": "example.com",
+      "directory": "example.com",
+      "fingerprint_sha256": "remote"
+    }
+  ]
+}
+EOF_REMOTE_META
+if AGENT_REMOTE_META="$TMP/remote-conflict-meta.json" "$ROOT/acme-manager.sh" agent sync >/dev/null 2>&1; then
+  echo 'FAIL: same-revision certificate conflict should stop synchronization' >&2
+  exit 1
+fi
 
 "$ROOT/acme-manager.sh" dns configure cloudflare <<'INPUT'
 token-value

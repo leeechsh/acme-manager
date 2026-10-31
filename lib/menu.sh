@@ -143,7 +143,7 @@ main_menu() {
     ui_menu_item 9 'Email notifications' 'SMTP configuration and test email'
 
     ui_section 'Maintenance'
-    ui_menu_item 10 'WebDAV synchronization' 'Upload certificates and metadata'
+    ui_menu_item 10 'WebDAV synchronization' 'Configure upload, download or bidirectional mode'
     ui_menu_item 11 'Certificate Agent' 'Pull changed certificates from WebDAV'
     ui_menu_item 12 'Logs & diagnostics' 'View logs and run doctor'
     ui_menu_item 13 'Settings / update' 'Defaults and acme.sh maintenance'

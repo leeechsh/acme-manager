@@ -23,6 +23,50 @@ meta_iso_date() {
   date -u -d "$value" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '%s' "$value"
 }
 
+webdav_node_id() {
+  local value
+  if [[ -n "$WEBDAV_NODE_ID" ]]; then
+    printf '%s\n' "$WEBDAV_NODE_ID"
+    return 0
+  fi
+  if [[ -r /etc/machine-id ]]; then
+    value=$(tr -cd 'A-Za-z0-9' </etc/machine-id | cut -c1-16)
+  else
+    value=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-' | cut -c1-32)
+  fi
+  printf '%s\n' "${value:-node}"
+}
+
+meta_revision() {
+  local file="$1" value
+  [[ -f "$file" ]] || { printf '0\n'; return 0; }
+  value=$(awk -F: '/"revision"[[:space:]]*:/ {gsub(/[^0-9]/, "", $2); print $2; exit}' "$file")
+  [[ "$value" =~ ^[0-9]+$ ]] || value=0
+  printf '%s\n' "$value"
+}
+
+meta_node_id() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  awk -F'"' '/"node_id"[[:space:]]*:/ {print $4; exit}' "$file"
+}
+
+meta_update_version() {
+  local file="$1" revision="$2" node_id="$3" tmp
+  tmp=$(mktemp "${file}.version.XXXXXX") || return 1
+  awk -v revision="$revision" -v node_id="$node_id" '
+    /"revision"[[:space:]]*:/ {
+      sub(/"revision"[[:space:]]*:[[:space:]]*[0-9]+/, "\"revision\": " revision)
+    }
+    /"node_id"[[:space:]]*:/ {
+      sub(/"node_id"[[:space:]]*:[[:space:]]*"[^"]*"/, "\"node_id\": \"" node_id "\"")
+    }
+    { print }
+  ' "$file" >"$tmp"
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$file"
+}
+
 meta_cert_entry() {
   local dir="$1" domain="$2" cert="$3" conf start end fingerprint key_type ca alt
   conf="$ACME_HOME/${domain}_ecc/${domain}.conf"
@@ -54,12 +98,15 @@ meta_cert_entry() {
 }
 
 meta_generate() {
-  local output tmp dir domain cert first=1
+  local output tmp dir domain cert first=1 revision node_id
   mkdir -p "$CERT_DIR"
   output=$(meta_file)
+  revision=$(meta_revision "$output")
+  node_id=$(webdav_node_id)
   tmp=$(mktemp "${output}.tmp.XXXXXX") || return 1
   {
-    printf '{\n  "schema_version": 1,\n  "generated_at": "%s",\n  "certificates": [\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    printf '{\n  "schema_version": 2,\n  "revision": %s,\n  "node_id": "%s",\n  "generated_at": "%s",\n  "certificates": [\n' \
+      "$revision" "$(meta_json_value "$node_id")" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     while IFS= read -r -d '' dir; do
       cert="$dir/cert.pem"
       [[ -f "$cert" ]] || continue
@@ -75,10 +122,29 @@ meta_generate() {
 }
 
 meta_sync() {
-  local file
-  file=$(meta_generate) || return 1
-  if [[ "$WEBDAV_ENABLED" == true ]]; then
-    webdav_sync "$file" || return 1
-  fi
-  success "Certificate metadata generated: $file"
+  local mode file
+  mode=$(webdav_sync_mode)
+  case "$mode" in
+    disabled)
+      file=$(meta_generate) || return 1
+      success "Certificate metadata generated locally: $file"
+      ;;
+    upload)
+      file=$(meta_generate) || return 1
+      webdav_sync "$file" || return 1
+      ;;
+    download)
+      agent_pull || return 1
+      ;;
+    bidirectional)
+      file=$(meta_generate) || return 1
+      agent_pull allow-missing || return 1
+      file=$(meta_generate) || return 1
+      webdav_sync "$file" || return 1
+      ;;
+    *)
+      error "Unsupported WebDAV synchronization mode: $mode"
+      return 1
+      ;;
+  esac
 }

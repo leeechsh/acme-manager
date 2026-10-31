@@ -115,12 +115,23 @@ acme-manager webdav configure
 
 ```text
 WEBDAV_ENABLED="true"
+WEBDAV_SYNC_MODE="upload"
 WEBDAV_URL="https://dav.example.com/acme-manager"
 WEBDAV_USERNAME="sync-user"
 WEBDAV_PASSWORD="webdav-password"
+WEBDAV_NODE_ID="hub-01"
 ```
 
-部署完成后，管理器会先生成 `/var/cert/meta.json`，上传所有证书文件，最后上传 `meta.json`。WebDAV 远端布局如下：
+`WEBDAV_SYNC_MODE` 支持四种值：
+
+- `disabled`：关闭 WebDAV 同步
+- `upload`：只上传本机证书和 `meta.json`
+- `download`：只从 WebDAV 下载证书
+- `bidirectional`：先拉取远端变化，再合并本机证书并递增版本上传
+
+`WEBDAV_ENABLED="false"` 会覆盖同步模式并关闭 WebDAV。双向模式要求 `AGENT_TARGET_DIR` 与 `CERT_DIR` 相同。
+
+部署完成后，上传模式会先生成 `/var/cert/meta.json`，上传所有证书文件，最后上传 `meta.json`。WebDAV 远端布局如下：
 
 ```text
 <WebDAV URL>/meta.json
@@ -132,16 +143,18 @@ WEBDAV_PASSWORD="webdav-password"
 <WebDAV URL>/<domain>/<domain>.pem
 ```
 
-`meta.json` 包含域名、证书目录、密钥类型、CA、签发时间、过期时间和 SHA-256 指纹，不包含私钥内容。acme.sh 自动续期时，部署 Reload Hook 也会重新生成并上传元数据。
+`meta.json` 包含 schema 版本、单调递增的 `revision`、节点 ID、域名、证书目录、密钥类型、CA、签发时间、过期时间和 SHA-256 指纹，不包含私钥内容。上传前会读取远端版本；远端存在同版本同域名但指纹不同的情况时会报告冲突并停止覆盖。acme.sh 自动续期时，部署 Reload Hook 也会按照当前同步模式处理元数据。
 
 ## 证书 Agent
 
-Certificate Agent 已合并到 `acme-manager` 主程序，不需要安装 acme.sh，也不再使用独立的 `acme-agent` 命令或 `agent.conf`。在其它设备上仍然使用同一个配置文件 `/usr/local/acme-manager/etc/config.conf`：
+Certificate Agent 已合并到 `acme-manager` 主程序，不需要安装 acme.sh，也不再使用独立的 `acme-agent` 命令或 `agent.conf`。在其它设备上仍然使用同一个配置文件 `/usr/local/acme-manager/etc/config.conf`，将 `WEBDAV_SYNC_MODE` 设置为 `download`：
 
 ```text
 WEBDAV_URL="https://dav.example.com/acme-manager"
 WEBDAV_USERNAME="sync-user"
 WEBDAV_PASSWORD="webdav-password"
+WEBDAV_SYNC_MODE="download"
+WEBDAV_NODE_ID="replica-01"
 AGENT_TARGET_DIR="/var/cert"
 AGENT_RELOAD_CMD="systemctl reload nginx"
 AGENT_LOG="/var/log/acme-manager/agent.log"
@@ -168,7 +181,7 @@ sudo acme-manager agent cron install
 sudo acme-manager agent status
 ```
 
-Agent 先下载并比较 `meta.json`。元数据没有变化时不会下载证书；发生变化时，先下载到临时目录，全部必需文件成功后再替换目标域名目录，最后执行 `AGENT_RELOAD_CMD`。
+Agent 先下载并比较 `meta.json` 的 revision 和证书指纹。下载模式下，元数据没有变化时不会下载证书；发生变化时，先下载到临时目录，全部必需文件成功后再替换目标域名目录，最后执行 `AGENT_RELOAD_CMD`。双向模式下，`agent sync` 会先拉取远端变化，再合并本机证书集合并上传新 revision。远端版本低于本地版本时会保留本地证书，同一 revision 的同域名指纹不一致时会报告冲突。
 
 ## 配置
 
