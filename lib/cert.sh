@@ -162,11 +162,14 @@ cert_native_record_exists() {
 }
 
 cert_metadata_source() {
-  local metadata="$1" directory="$2" node_id
-  if cert_native_record_exists "$directory"; then
+  local metadata="$1" directory="$2" node_id local_node
+  node_id=$(meta_node_id "$metadata")
+  local_node=$(webdav_node_id)
+  if [[ -n "$node_id" && "$node_id" != "$local_node" ]]; then
+    printf 'Remote %s\n' "$node_id"
+  elif cert_native_record_exists "$directory"; then
     printf 'Local acme.sh\n'
   elif webdav_mode_allows_download; then
-    node_id=$(meta_node_id "$metadata")
     printf 'Remote %s\n' "${node_id:-unknown}"
   else
     printf 'Managed files\n'
