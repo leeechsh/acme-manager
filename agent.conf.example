@@ -1,8 +1,0 @@
-# ACME Agent configuration. Keep this file mode 600 because it contains a password.
-WEBDAV_URL="https://dav.example.com/acme-manager"
-WEBDAV_USERNAME=""
-WEBDAV_PASSWORD=""
-TARGET_DIR="/var/cert"
-RELOAD_CMD=""
-AGENT_LOG="/var/log/acme-agent.log"
-CRON_SCHEDULE="*/5 * * * *"

@@ -28,6 +28,8 @@ source "$SCRIPT_DIR/lib/notify.sh"
 source "$SCRIPT_DIR/lib/cert.sh"
 # shellcheck source=lib/menu.sh
 source "$SCRIPT_DIR/lib/menu.sh"
+# shellcheck source=lib/agent.sh
+source "$SCRIPT_DIR/lib/agent.sh"
 
 set -Eeuo pipefail
 umask 077
@@ -71,6 +73,8 @@ Accounts and system:
   logs                              View manager logs
   webdav status|configure|test|sync
                                   Manage WebDAV certificate synchronization
+  agent status|configure|sync|cron install|cron remove
+                                  Pull changed certificates from WebDAV
   meta sync                        Regenerate certificate metadata and sync it
   update                            Update manager code from GitHub
   version
@@ -113,6 +117,22 @@ command_dispatch() {
     logs) menu_logs;;
     webdav)
       local sub="${1:-status}"; case "$sub" in status) webdav_status;; configure) webdav_configure;; test) webdav_test;; sync) meta_sync;; *) error 'Usage: webdav status|configure|test|sync'; return 2;; esac;;
+    agent)
+      local sub="${1:-status}"; [[ $# -gt 0 ]] && shift || true
+      case "$sub" in
+        status) agent_status;;
+        configure) agent_configure;;
+        sync) agent_sync;;
+        cron)
+          case "${1:-}" in
+            install) agent_cron_install;;
+            remove) agent_cron_remove;;
+            *) error 'Usage: agent cron install|remove'; return 2;;
+          esac
+          ;;
+        *) error 'Usage: agent status|configure|sync|cron install|cron remove'; return 2;;
+      esac
+      ;;
     meta)
       case "${1:-sync}" in sync) meta_sync;; *) error 'Usage: meta sync'; return 2;; esac;;
     update) "$SCRIPT_DIR/install.sh" --update "$@";;

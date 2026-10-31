@@ -29,6 +29,10 @@ config_defaults() {
   WEBDAV_URL=''
   WEBDAV_USERNAME=''
   WEBDAV_PASSWORD=''
+  AGENT_TARGET_DIR="$CERT_DIR"
+  AGENT_RELOAD_CMD=''
+  AGENT_LOG="$LOG_DIR/agent.log"
+  AGENT_CRON_SCHEDULE='*/5 * * * *'
 }
 
 config_path_default() {
@@ -92,7 +96,7 @@ config_load() {
       value="${value#\"}"; value="${value%\"}"
       value="${value#\'}"; value="${value%\'}"
       case "$key" in
-        DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME|WEBDAV_ENABLED|WEBDAV_URL|WEBDAV_USERNAME|WEBDAV_PASSWORD)
+        DEFAULT_CA|DEFAULT_DNS|DEFAULT_KEY_TYPE|AUTO_RENEW|NOTIFY_ENABLED|NOTIFY_LEVEL|LOG_DIR|EXPIRY_DAYS|ACME_HOME|SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_FROM|SMTP_TO|SMTP_USERNAME|WEBDAV_ENABLED|WEBDAV_URL|WEBDAV_USERNAME|WEBDAV_PASSWORD|AGENT_TARGET_DIR|AGENT_RELOAD_CMD|AGENT_LOG|AGENT_CRON_SCHEDULE)
           printf -v "$key" '%s' "$value" ;;
         CERT_DIR)
           if [[ "$value" == '/etc/ssl/acme' && -z "$env_cert_dir" && ${EUID:-$(id -u)} -eq 0 ]]; then
@@ -129,6 +133,12 @@ config_validate() {
   valid_abs_path "$CERT_DIR" || { error 'CERT_DIR must be an absolute path'; return 1; }
   valid_abs_path "$LOG_DIR" || { error 'LOG_DIR must be an absolute path'; return 1; }
   valid_abs_path "$ACME_HOME" || { error 'ACME_HOME must be an absolute path'; return 1; }
+  valid_abs_path "$AGENT_TARGET_DIR" || { error 'AGENT_TARGET_DIR must be an absolute path'; return 1; }
+  valid_abs_path "$AGENT_LOG" || { error 'AGENT_LOG must be an absolute path'; return 1; }
+  [[ "$AGENT_CRON_SCHEDULE" =~ ^@([a-z]+)$ || "$AGENT_CRON_SCHEDULE" =~ ^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+$ ]] || {
+    error 'AGENT_CRON_SCHEDULE must be a five-field cron expression or @daily-style shortcut'
+    return 1
+  }
   valid_bool "$WEBDAV_ENABLED" || { error 'WEBDAV_ENABLED must be true or false'; return 1; }
   if [[ -n "$WEBDAV_URL" ]]; then
     [[ "$WEBDAV_URL" =~ ^https?://[^[:space:]]+$ ]] || { error 'WEBDAV_URL must start with http:// or https://'; return 1; }
@@ -164,6 +174,10 @@ WEBDAV_ENABLED="$WEBDAV_ENABLED"
 WEBDAV_URL="$WEBDAV_URL"
 WEBDAV_USERNAME="$WEBDAV_USERNAME"
 WEBDAV_PASSWORD="$WEBDAV_PASSWORD"
+AGENT_TARGET_DIR="$AGENT_TARGET_DIR"
+AGENT_RELOAD_CMD="$AGENT_RELOAD_CMD"
+AGENT_LOG="$AGENT_LOG"
+AGENT_CRON_SCHEDULE="$AGENT_CRON_SCHEDULE"
 EOF_CONF
   chmod 600 "$file"
   success "Config written to $file"
@@ -184,6 +198,7 @@ config_show() {
   printf 'Auto renewal: %s\nNotifications: %s (level %s)\nExpiry reminder: %s days\n' "$AUTO_RENEW" "$NOTIFY_ENABLED" "$NOTIFY_LEVEL" "$EXPIRY_DAYS"
   printf 'SMTP: %s:%s (%s), from=%s, to=%s\n' "${SMTP_HOST:-not configured}" "${SMTP_PORT:-default}" "$SMTP_SECURE" "${SMTP_FROM:-not configured}" "${SMTP_TO:-not configured}"
   printf 'WebDAV: %s, url=%s, username=%s\n' "$WEBDAV_ENABLED" "${WEBDAV_URL:-not configured}" "${WEBDAV_USERNAME:-not configured}"
+  printf 'Agent: target=%s, reload=%s, cron=%s, log=%s\n' "$AGENT_TARGET_DIR" "${AGENT_RELOAD_CMD:-not configured}" "$AGENT_CRON_SCHEDULE" "$AGENT_LOG"
 }
 
 config_doctor() {

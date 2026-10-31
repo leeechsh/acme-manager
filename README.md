@@ -9,7 +9,7 @@ ACME Manager 是一个 Bash 数字菜单和 CLI 管理层，复用 [acme.sh](htt
 - 证书列表、详情、签发、续期、部署、删除、可选撤销和过期检查
 - `--install-cert` 自定义路径以及受控 Reload Hook
 - 部署后生成 `/var/cert/meta.json`，并可将证书目录和元数据上传到 WebDAV
-- 提供独立的 `acme-agent`，其它设备先拉取元数据，变化后再原子更新证书目录
+- 内置 Certificate Agent，其它设备使用同一个 `acme-manager` 主程序拉取元数据和证书
 - DNS 凭据隐藏输入并写入 acme.sh 原生 `account.conf`，文件权限为 `0600`
 - SMTP 配置复用 acme.sh notify hook；配置和测试命令不会把密码写入管理器配置或日志
 - acme.sh 原生 Cron 安装/检查/移除，不创建第二套调度器
@@ -44,7 +44,6 @@ curl -fsSL https://raw.githubusercontent.com/leeechsh/acme-manager/main/install.
 
 ```text
 /usr/local/bin/acme-manager -> /usr/local/acme-manager/acme-manager.sh
-/usr/local/bin/acme-agent -> /usr/local/acme-manager/acme-agent.sh
 /usr/local/lib/acme-manager -> /usr/local/acme-manager/
 ```
 
@@ -76,6 +75,9 @@ acme-manager cron install
 acme-manager doctor
 acme-manager webdav status
 acme-manager webdav sync
+acme-manager agent status
+acme-manager agent sync
+acme-manager agent cron install
 ```
 
 root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生成：
@@ -134,36 +136,45 @@ WEBDAV_PASSWORD="webdav-password"
 
 ## 证书 Agent
 
-安装包同时提供不依赖 acme.sh 的 `acme-agent`。在其它设备上配置 `/usr/local/acme-manager/etc/agent.conf`：
+Certificate Agent 已合并到 `acme-manager` 主程序，不需要安装 acme.sh，也不再使用独立的 `acme-agent` 命令或 `agent.conf`。在其它设备上仍然使用同一个配置文件 `/usr/local/acme-manager/etc/config.conf`：
 
 ```text
 WEBDAV_URL="https://dav.example.com/acme-manager"
 WEBDAV_USERNAME="sync-user"
 WEBDAV_PASSWORD="webdav-password"
-TARGET_DIR="/var/cert"
-RELOAD_CMD="systemctl reload nginx"
-CRON_SCHEDULE="*/5 * * * *"
+AGENT_TARGET_DIR="/var/cert"
+AGENT_RELOAD_CMD="systemctl reload nginx"
+AGENT_LOG="/var/log/acme-manager/agent.log"
+AGENT_CRON_SCHEDULE="*/5 * * * *"
 ```
+
+升级旧版本时，安装脚本会移除旧的 `acme-agent` 程序入口，但不会自动删除已有的 `agent.conf`。旧配置不会再被读取，请将其中的 WebDAV 和 Agent 字段合并到 `config.conf`。
 
 手动同步一次：
 
 ```bash
-sudo acme-agent sync
+sudo acme-manager agent sync
 ```
 
 安装每 5 分钟执行一次的 Cron：
 
 ```bash
-sudo acme-agent cron install
+sudo acme-manager agent cron install
 ```
 
-Agent 先下载并比较 `meta.json`。元数据没有变化时不会下载证书；发生变化时，先下载到临时目录，全部必需文件成功后再替换目标域名目录，最后执行 `RELOAD_CMD`。
+查看 Agent 配置和状态：
+
+```bash
+sudo acme-manager agent status
+```
+
+Agent 先下载并比较 `meta.json`。元数据没有变化时不会下载证书；发生变化时，先下载到临时目录，全部必需文件成功后再替换目标域名目录，最后执行 `AGENT_RELOAD_CMD`。
 
 ## 配置
 
 默认配置为 `/usr/local/acme-manager/etc/config.conf`；非 root 用户默认使用 `$XDG_CONFIG_HOME/acme-manager/config.conf`。也可以通过 `ACME_MANAGER_CONFIG` 指定路径。配置解析只接受白名单键，不执行 `source`，并且会写入 `0600`。
 
-完整示例见 `config.conf.example`。`ACME_HOME` 只决定 acme.sh 原生目录，`CERT_DIR` 只决定管理器默认部署目录。
+完整示例见 `config.conf.example`。`ACME_HOME` 只决定 acme.sh 原生目录，`CERT_DIR` 只决定管理器默认部署目录，Agent 的拉取目录由 `AGENT_TARGET_DIR` 决定。
 
 ## 测试
 

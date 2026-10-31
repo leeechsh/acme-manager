@@ -154,7 +154,10 @@ WEBDAV_ENABLED="true"
 WEBDAV_URL="https://dav.example.test/acme"
 WEBDAV_USERNAME="sync-user"
 WEBDAV_PASSWORD="sync#secret" # inline comments remain safe
+AGENT_TARGET_DIR="__AGENT_TARGET_DIR__"
+AGENT_LOG="__AGENT_LOG__"
 INJECT_WEBDAV
+sed -i "s#__AGENT_TARGET_DIR__#$TMP/agent-certs#; s#__AGENT_LOG__#$TMP/agent.log#" "$ACME_MANAGER_CONFIG"
 rm -f "$ACME_HOME/account.conf"
 "$ROOT/acme-manager.sh" webdav sync >/dev/null
 assert_contains "$FAKE_CURL_LOG" 'meta.json'
@@ -162,17 +165,10 @@ assert_contains "$FAKE_CURL_LOG" 'interactive.example.com/cert.pem'
 ! grep -Fq 'sync#secret' "$FAKE_CURL_LOG"
 [[ ! -e "$ACME_HOME/account.conf" ]]
 
-cat >"$TMP/agent.conf" <<EOF_AGENT
-WEBDAV_URL="https://dav.example.test/acme"
-WEBDAV_USERNAME="sync-user"
-WEBDAV_PASSWORD="sync-secret"
-TARGET_DIR="$TMP/agent-certs"
-AGENT_LOG="$TMP/agent.log"
-EOF_AGENT
-AGENT_REMOTE_META="$TMP/certs/meta.json" ACME_AGENT_CONFIG="$TMP/agent.conf" \
-  "$ROOT/acme-agent.sh" sync >/dev/null
+AGENT_REMOTE_META="$TMP/certs/meta.json" "$ROOT/acme-manager.sh" agent sync >/dev/null
 [[ -f "$TMP/agent-certs/meta.json" ]]
 [[ -f "$TMP/agent-certs/interactive.example.com/fullchain.pem" ]]
+printf '11\n0\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
 
 "$ROOT/acme-manager.sh" dns configure cloudflare <<'INPUT'
 token-value
@@ -184,16 +180,19 @@ assert_contains "$ACME_HOME/account.conf" "export CF_Token='token-value'"
 
 "$ROOT/acme-manager.sh" doctor >/dev/null || true
 
+mkdir -p "$TMP/prefix/acme-manager" "$TMP/prefix/bin"
+: >"$TMP/prefix/acme-manager/acme-agent.sh"
+ln -s "$TMP/prefix/acme-manager/acme-agent.sh" "$TMP/prefix/bin/acme-agent"
 PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" >/dev/null
 [[ -f "$TMP/prefix/acme-manager/acme-manager.sh" ]]
-[[ -f "$TMP/prefix/acme-manager/acme-agent.sh" ]]
+[[ -f "$TMP/prefix/acme-manager/lib/agent.sh" ]]
 [[ -L "$TMP/prefix/bin/acme-manager" ]]
 [[ "$(readlink "$TMP/prefix/bin/acme-manager")" == "$TMP/prefix/acme-manager/acme-manager.sh" ]]
-[[ -L "$TMP/prefix/bin/acme-agent" ]]
-[[ "$(readlink "$TMP/prefix/bin/acme-agent")" == "$TMP/prefix/acme-manager/acme-agent.sh" ]]
+[[ ! -e "$TMP/prefix/bin/acme-agent" ]]
 [[ -L "$TMP/prefix/lib/acme-manager" ]]
 [[ "$(readlink "$TMP/prefix/lib/acme-manager")" == "$TMP/prefix/acme-manager" ]]
-[[ -f "$TMP/config/agent.conf" ]]
+[[ -f "$TMP/config/config.conf" ]]
+[[ ! -e "$TMP/config/agent.conf" ]]
 PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" --uninstall >/dev/null
 [[ ! -e "$TMP/prefix/acme-manager" ]]
 [[ ! -e "$TMP/prefix/bin/acme-manager" ]]
