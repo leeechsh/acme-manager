@@ -145,7 +145,7 @@ WEBDAV_NODE_ID="hub-01"
 
 `meta.json` 包含 schema 版本、单调递增的 `revision`、节点 ID、域名、证书目录、密钥类型、CA、签发时间、过期时间和 SHA-256 指纹，不包含私钥内容。上传前会读取远端版本；远端存在同版本同域名但指纹不同的情况时会报告冲突并停止覆盖。acme.sh 自动续期时，部署 Reload Hook 也会按照当前同步模式处理元数据。
 
-证书列表会同时读取 acme.sh 原生证书记录，以及 `CERT_DIR` 和 `AGENT_TARGET_DIR` 下的 `meta.json`。列表会用 `Local acme.sh`、`WebDAV remote` 和 `Managed files` 标识来源。因此下载模式的设备即使没有安装 acme.sh，也能在主菜单的 `2 List certificates` 中看到已同步证书、有效期、CA 和部署目录；底部 `Deployment Paths` 也会列出 WebDAV 证书的完整文件路径。
+证书列表会同时读取 acme.sh 原生证书记录，以及 `CERT_DIR` 和 `AGENT_TARGET_DIR` 下的 `meta.json`。列表会用 `Local acme.sh`、`Remote <node_id>` 和 `Managed files` 标识来源，其中 `<node_id>` 来自对应 `meta.json`。因此下载模式的设备即使没有安装 acme.sh，也能在主菜单的 `2 List certificates` 中看到已同步证书、有效期、CA 和部署目录；底部 `Deployment Paths` 也会列出远程证书的完整文件路径。
 
 ## 证书 Agent
 

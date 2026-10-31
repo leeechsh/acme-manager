@@ -173,11 +173,12 @@ AGENT_REMOTE_META="$TMP/certs/meta.json" "$ROOT/acme-manager.sh" agent sync >/de
 ACME_MANAGER_CERT_DIR="$TMP/agent-certs" "$ROOT/acme-manager.sh" list >"$TMP/agent-list.txt"
 assert_contains "$TMP/agent-list.txt" 'interactive.example.com'
 assert_contains "$TMP/agent-list.txt" "$TMP/agent-certs/interactive.example.com"
-assert_contains "$TMP/agent-list.txt" 'WebDAV remote'
+REMOTE_NODE_ID=$(awk -F'"' '/"node_id"[[:space:]]*:/ {print $4; exit}' "$TMP/agent-certs/meta.json")
+assert_contains "$TMP/agent-list.txt" "Remote $REMOTE_NODE_ID"
 assert_contains "$TMP/agent-list.txt" "$TMP/agent-certs/interactive.example.com/cert.pem"
 env -u ACME_SH_BIN ACME_MANAGER_CERT_DIR="$TMP/agent-certs" "$ROOT/acme-manager.sh" list >"$TMP/agent-list-no-acme.txt"
 assert_contains "$TMP/agent-list-no-acme.txt" 'interactive.example.com'
-assert_contains "$TMP/agent-list-no-acme.txt" 'WebDAV remote'
+assert_contains "$TMP/agent-list-no-acme.txt" "Remote $REMOTE_NODE_ID"
 assert_contains "$TMP/agent-list-no-acme.txt" "$TMP/agent-certs/interactive.example.com/fullchain.pem"
 cat >>"$ACME_MANAGER_CONFIG" <<EOF_BIDIRECTIONAL
 WEBDAV_SYNC_MODE="bidirectional"

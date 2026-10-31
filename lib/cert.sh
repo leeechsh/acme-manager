@@ -162,11 +162,12 @@ cert_native_record_exists() {
 }
 
 cert_metadata_source() {
-  local directory="$1"
+  local metadata="$1" directory="$2" node_id
   if cert_native_record_exists "$directory"; then
     printf 'Local acme.sh\n'
   elif webdav_mode_allows_download; then
-    printf 'WebDAV remote\n'
+    node_id=$(meta_node_id "$metadata")
+    printf 'Remote %s\n' "${node_id:-unknown}"
   else
     printf 'Managed files\n'
   fi
@@ -182,7 +183,7 @@ cert_deployed_list() {
     while IFS= read -r row; do
       directory="${row##*$'\t'}"
       [[ -f "$directory/cert.pem" ]] || continue
-      source=$(cert_metadata_source "$directory")
+      source=$(cert_metadata_source "$metadata" "$directory")
       filtered+="$source"$'\t'"$row"$'\n'
     done <<<"$rows"
   done < <(
@@ -240,8 +241,8 @@ cert_webdav_deployment_summary() {
       domain="${row%%$'\t'*}"
       directory="${row##*$'\t'}"
       [[ -f "$directory/cert.pem" ]] || continue
-      source=$(cert_metadata_source "$directory")
-      [[ "$source" == 'WebDAV remote' ]] || continue
+      source=$(cert_metadata_source "$metadata" "$directory")
+      [[ "$source" == Remote\ * ]] || continue
       [[ -n "${seen[$directory]+set}" ]] && continue
       seen["$directory"]=1
       stem=$(deploy_extra_stem "$domain")
