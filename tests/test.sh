@@ -87,6 +87,7 @@ for file in "$ROOT"/lib/*.sh; do bash -n "$file"; done
 "$ROOT/acme-manager.sh" config write
 [[ -f "$ACME_MANAGER_CONFIG" ]]
 [[ "$(stat -c '%a' "$ACME_MANAGER_CONFIG")" == 600 ]]
+[[ "$("$ROOT/acme-manager.sh" version)" == "ACME Manager 1.0.1" ]]
 
 cat >>"$ACME_MANAGER_CONFIG" <<'INJECT'
 UNTRUSTED='touch /tmp/acme-manager-should-not-exist'
@@ -241,6 +242,7 @@ mkdir -p "$TMP/prefix/acme-manager" "$TMP/prefix/bin"
 ln -s "$TMP/prefix/acme-manager/acme-agent.sh" "$TMP/prefix/bin/acme-agent"
 PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" >/dev/null
 [[ -f "$TMP/prefix/acme-manager/acme-manager.sh" ]]
+[[ -f "$TMP/prefix/acme-manager/VERSION" ]]
 [[ -f "$TMP/prefix/acme-manager/lib/agent.sh" ]]
 [[ -L "$TMP/prefix/bin/acme-manager" ]]
 [[ "$(readlink "$TMP/prefix/bin/acme-manager")" == "$TMP/prefix/acme-manager/acme-manager.sh" ]]

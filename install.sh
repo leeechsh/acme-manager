@@ -131,7 +131,7 @@ fi
 }
 
 mkdir -p "$DEST" "$PREFIX/bin" "$CONFIG_DIR"
-cp -R "$SOURCE_DIR/acme-manager.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR/lib" "$SOURCE_DIR/config.conf.example" "$DEST/"
+cp -R "$SOURCE_DIR/acme-manager.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR/lib" "$SOURCE_DIR/config.conf.example" "$SOURCE_DIR/VERSION" "$DEST/"
 chmod 755 "$DEST/acme-manager.sh" "$DEST/install.sh" "$DEST/lib"/*.sh
 rm -f "$DEST/acme-agent.sh"
 rm -f "$LEGACY_AGENT_BIN"

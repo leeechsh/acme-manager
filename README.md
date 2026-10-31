@@ -2,6 +2,8 @@
 
 ACME Manager 是一个 Bash 数字菜单和 CLI 管理层，复用 [acme.sh](https://github.com/acmesh-official/acme.sh) 完成 ACME 协议、DNS-01 验证、账户存储、证书续期和部署。它不建立独立数据库，不覆盖已有的 acme.sh 证书和账户。
 
+当前管理器版本保存在仓库根目录的 `VERSION` 文件中，`acme-manager version` 和主菜单会读取同一版本值。
+
 ## 已实现
 
 - Let's Encrypt、ZeroSSL；Cloudflare、腾讯云 DNSPod、阿里云 AliDNS

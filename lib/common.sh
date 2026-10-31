@@ -3,7 +3,13 @@
 # Shared helpers. The entrypoint enables strict mode after loading defaults.
 
 : "${ACME_MANAGER_NAME:=ACME Manager}"
-: "${ACME_MANAGER_VERSION:=1.0.0}"
+if [[ -z "${ACME_MANAGER_VERSION:-}" ]]; then
+  ACME_MANAGER_VERSION_FILE="${SCRIPT_DIR:-$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}/VERSION"
+  if [[ -r "$ACME_MANAGER_VERSION_FILE" ]]; then
+    ACME_MANAGER_VERSION=$(tr -d '[:space:]' <"$ACME_MANAGER_VERSION_FILE")
+  fi
+fi
+: "${ACME_MANAGER_VERSION:=1.0.1}"
 
 UI_RESET=''
 UI_BOLD=''
