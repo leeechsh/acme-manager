@@ -87,7 +87,7 @@ for file in "$ROOT"/lib/*.sh; do bash -n "$file"; done
 "$ROOT/acme-manager.sh" config write
 [[ -f "$ACME_MANAGER_CONFIG" ]]
 [[ "$(stat -c '%a' "$ACME_MANAGER_CONFIG")" == 600 ]]
-[[ "$("$ROOT/acme-manager.sh" version)" == "ACME Manager 1.0.4" ]]
+[[ "$("$ROOT/acme-manager.sh" version)" == "ACME Manager 1.0.5" ]]
 
 cat >>"$ACME_MANAGER_CONFIG" <<'INJECT'
 UNTRUSTED='touch /tmp/acme-manager-should-not-exist'

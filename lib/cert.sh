@@ -232,12 +232,12 @@ cert_list() {
 
 cert_info() { local domain="$1"; valid_domain "$domain" || return 1; run_acme --info --domain "$domain"; }
 
-cert_available_domains() {
-  local file domain metadata root rows row directory
+cert_available_certificates() {
+  local file domain metadata root rows row directory source
   if [[ -d "$ACME_HOME" ]]; then
     while IFS= read -r -d '' file; do
       domain=$(awk -F= '$1=="Le_Domain" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
-      valid_domain "$domain" && printf '%s\n' "$domain"
+      valid_domain "$domain" && printf 'Local acme.sh\t%s\t\n' "$domain"
     done < <(find "$ACME_HOME" -mindepth 2 -maxdepth 2 -type f -name '*.conf' -print0 2>/dev/null)
   fi
   while IFS=$'\t' read -r metadata root; do
@@ -248,7 +248,8 @@ cert_available_domains() {
       domain="${row%%$'\t'*}"
       directory="${row##*$'\t'}"
       [[ -f "$directory/cert.pem" ]] || continue
-      valid_domain "$domain" && printf '%s\n' "$domain"
+      source=$(cert_metadata_source "$metadata" "$directory")
+      valid_domain "$domain" && printf '%s\t%s\t%s\n' "$source" "$domain" "$directory"
     done <<<"$rows"
   done < <(
     printf '%s\t%s\n' "$CERT_DIR/meta.json" "$CERT_DIR"
@@ -258,19 +259,56 @@ cert_available_domains() {
   )
 }
 
-cert_prompt_domain() {
-  local -a domains=() options=()
-  local domain
-  mapfile -t domains < <(cert_available_domains | sort -u)
-  if ((${#domains[@]} == 0)); then
-    prompt_value 'Domain' ''
+cert_prompt_certificate() {
+  local -a certificates=() options=()
+  local certificate source domain directory selected index
+  mapfile -t certificates < <(cert_available_certificates | sort -t $'\t' -k1,2 -u)
+  if ((${#certificates[@]} == 0)); then
+    domain=$(prompt_value 'Domain' '') || return 1
+    printf 'Local acme.sh\t%s\t\n' "$domain"
     return
   fi
   options=("" 'Cancel')
-  for domain in "${domains[@]}"; do
-    options+=("$domain" "$domain")
+  for index in "${!certificates[@]}"; do
+    certificate="${certificates[index]}"
+    IFS=$'\t' read -r source domain directory <<<"$certificate"
+    options+=("$((index + 1))" "$domain [$source]")
   done
-  prompt_select 'Select a certificate to remove' '' "${options[@]}"
+  selected=$(prompt_select 'Select a certificate to remove' '' "${options[@]}") || return 1
+  [[ -n "$selected" ]] || return 0
+  [[ "$selected" =~ ^[0-9]+$ && "$selected" -ge 1 && "$selected" -le "${#certificates[@]}" ]] || return 1
+  printf '%s\n' "${certificates[selected-1]}"
+}
+
+cert_remove_remote_copy() {
+  local domain="$1" directory="$2" source="$3"
+  valid_domain "$domain" || { error "Invalid domain: $domain"; return 1; }
+  [[ -n "$directory" && ( "$directory" == "$CERT_DIR/"* || "$directory" == "$AGENT_TARGET_DIR/"* ) ]] || {
+    error "Refusing to remove an unsafe synchronized path: $directory"
+    return 1
+  }
+  confirm "Remove the local copy of $domain from $directory? Source $source will remain and may return on the next sync" || {
+    warn 'Cancelled'
+    return 1
+  }
+  rm -rf -- "$directory"
+  warn "Removed only the local synchronized copy of $domain; $source was not changed"
+}
+
+cert_remove_interactive() {
+  local selection source domain directory revoke
+  selection=$(cert_prompt_certificate) || { warn 'Cancelled'; return 1; }
+  [[ -n "$selection" ]] || { warn 'Cancelled'; return 1; }
+  IFS=$'\t' read -r source domain directory <<<"$selection"
+  [[ -n "$domain" ]] || { warn 'Cancelled'; return 1; }
+  if [[ "$source" == Remote\ * ]]; then
+    cert_remove_remote_copy "$domain" "$directory" "$source"
+    return
+  fi
+  revoke=$(prompt_select 'Also revoke the certificate at the CA?' false \
+    false 'No' \
+    true 'Yes') || return 1
+  cert_remove "$domain" "$revoke"
 }
 
 cert_webdav_deployment_summary() {
@@ -427,12 +465,7 @@ cert_menu() {
       4) domain=$(prompt_value 'Domain (leave empty to renew all)' ''); if [[ -n "$domain" ]]; then cert_renew --domain "$domain" || true; else cert_renew --all || true; fi; pause_screen;;
       5) cert_expiry_check || true; pause_screen;;
       6)
-        domain=$(cert_prompt_domain) || { warn 'Cancelled'; pause_screen; continue; }
-        [[ -n "$domain" ]] || { warn 'Cancelled'; pause_screen; continue; }
-        revoke=$(prompt_select 'Also revoke the certificate at the CA?' false \
-          false 'No' \
-          true 'Yes')
-        cert_remove "$domain" "$revoke" || true
+        cert_remove_interactive || true
         pause_screen
         ;;
       0) return 0;; *) warn 'Invalid choice';;

@@ -6,6 +6,8 @@ ACME Manager 是一个 Bash 数字菜单和 CLI 管理层，复用 [acme.sh](htt
 
 当本机和远程节点存在同一域名时，列表和 `Deployment Paths` 会保留两条记录，并用 `Local acme.sh` 或 `Remote <node_id>` 区分来源，不会静默覆盖来源信息。若两者使用同一部署目录，实际文件仍由当前同步策略决定，应为不同节点配置独立的 `AGENT_TARGET_DIR` 或先解决版本冲突。
 
+交互式删除也会按来源列出同名证书。选择 `Local acme.sh` 会处理本机 acme.sh 记录；选择 `Remote <node_id>` 只删除本机缓存副本，远程节点上的源证书不受影响，并可能在下一次同步时重新下载。
+
 ## 已实现
 
 - Let's Encrypt、ZeroSSL；Cloudflare、腾讯云 DNSPod、阿里云 AliDNS
