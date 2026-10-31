@@ -87,7 +87,7 @@ for file in "$ROOT"/lib/*.sh; do bash -n "$file"; done
 "$ROOT/acme-manager.sh" config write
 [[ -f "$ACME_MANAGER_CONFIG" ]]
 [[ "$(stat -c '%a' "$ACME_MANAGER_CONFIG")" == 600 ]]
-[[ "$("$ROOT/acme-manager.sh" version)" == "ACME Manager 1.0.3" ]]
+[[ "$("$ROOT/acme-manager.sh" version)" == "ACME Manager 1.0.4" ]]
 
 cat >>"$ACME_MANAGER_CONFIG" <<'INJECT'
 UNTRUSTED='touch /tmp/acme-manager-should-not-exist'
@@ -189,6 +189,7 @@ sed -i 's/"node_id": "[^"]*"/"node_id": "remote-dc9"/' "$TMP/agent-certs/meta.js
 ACME_MANAGER_CERT_DIR="$TMP/agent-certs" "$ROOT/acme-manager.sh" list >"$TMP/agent-list-duplicate.txt"
 assert_contains "$TMP/agent-list-duplicate.txt" 'Remote remote-dc9'
 assert_contains "$TMP/agent-list-duplicate.txt" 'interactive.example.com [Remote remote-dc9]'
+assert_contains "$TMP/agent-list-duplicate.txt" 'interactive.example.com [Local acme.sh]'
 cat >>"$ACME_MANAGER_CONFIG" <<EOF_BIDIRECTIONAL
 WEBDAV_SYNC_MODE="bidirectional"
 AGENT_TARGET_DIR="$TMP/certs"

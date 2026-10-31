@@ -323,7 +323,7 @@ cert_deployment_summary() {
       key=$(awk -F= '$1=="Le_RealKeyPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
       fullchain=$(awk -F= '$1=="Le_RealFullChainPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
       ca=$(awk -F= '$1=="Le_RealCACertPath" {gsub(/'\''|"/, "", $2); print $2; exit}' "$file")
-      printf '  %s%s%s\n' "$UI_PRIMARY" "$domain" "$UI_RESET"
+      printf '  %s%s%s %s[Local acme.sh]%s\n' "$UI_PRIMARY" "$domain" "$UI_RESET" "$UI_MUTED" "$UI_RESET"
       printf '    %-10s %s\n' 'cert' "${cert:--}"
       printf '    %-10s %s\n' 'key' "${key:--}"
       printf '    %-10s %s\n' 'fullchain' "${fullchain:--}"
