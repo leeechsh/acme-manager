@@ -168,7 +168,8 @@ main_menu() {
         ;;
       5)
         local domain revoke_choice
-        domain=$(prompt_value 'Domain')
+        domain=$(cert_prompt_domain) || { warn 'Cancelled'; pause_screen; continue; }
+        [[ -n "$domain" ]] || { warn 'Cancelled'; pause_screen; continue; }
         revoke_choice=$(prompt_select 'Also revoke the certificate at the CA?' false \
           false 'No' \
           true 'Yes')
