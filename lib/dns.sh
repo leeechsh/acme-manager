@@ -5,12 +5,18 @@ dns_label() { case "$1" in cloudflare) printf 'Cloudflare\n' ;; dnspod) printf '
 dns_keys() { case "$1" in cloudflare) printf 'CF_Token\nCF_Account_ID\n' ;; dnspod) printf 'Tencent_SecretId\nTencent_SecretKey\nTencent_SessionToken\nTencent_Region\n' ;; aliyun) printf 'Ali_Key\nAli_Secret\nAli_SecurityToken\n' ;; *) return 1 ;; esac; }
 
 dns_status() {
-  local provider="${1:-$DEFAULT_DNS}" key value configured=0 profile
+  local provider="${1:-$DEFAULT_DNS}" key value configured=0 profile named=0
   valid_choice "$provider" cloudflare dnspod aliyun || { error 'Unknown DNS provider'; return 1; }
   printf '%s (%s)\n' "$(dns_label "$provider")" "$(dns_hook "$provider")"
+  [[ "$provider" != cloudflare ]] || printf '  Legacy acme.sh credentials\n'
   while IFS= read -r key; do
     [[ -n "$key" ]] || continue
-    if value=$(account_get_var "$key" || account_get_var "SAVED_$key") && [[ -n "$value" ]]; then
+    if [[ "$provider" == cloudflare ]]; then
+      value=$(cf_legacy_value "$key") || value=''
+    else
+      value=$(account_get_var "$key" || account_get_var "SAVED_$key") || value=''
+    fi
+    if [[ -n "$value" ]]; then
       printf '  %-24s %sconfigured%s\n' "$key" "$UI_SUCCESS" "$UI_RESET"
       configured=1
     else
@@ -18,10 +24,13 @@ dns_status() {
     fi
   done < <(dns_keys "$provider")
   if [[ "$provider" == cloudflare ]]; then
+    printf '  Named Cloudflare Tokens\n'
     while IFS= read -r profile; do
       printf '  Token profile: %s\n' "$profile"
       configured=1
+      named=1
     done < <(cf_profiles)
+    (( named )) || ui_hint '  None. Choose Add Token or Import legacy Token in the Cloudflare Tokens menu.'
   fi
   (( configured )) || warn 'No credentials found; configure this provider first'
   return 0

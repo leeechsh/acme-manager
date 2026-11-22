@@ -15,11 +15,13 @@ cf_profiles() {
   done
 }
 
-cf_has_legacy_token() {
-  local value
-  [[ -n "${CF_Token:-}" ]] && return 0
-  value=$(account_get_var CF_Token || account_get_var SAVED_CF_Token) || return 1
-  [[ -n "$value" ]]
+cf_legacy_value() {
+  local key="$1" value
+  value="${!key:-}"
+  [[ -n "$value" ]] || value=$(account_get_var "$key" || true)
+  [[ -n "$value" ]] || value=$(account_get_var "SAVED_$key" || true)
+  [[ -n "$value" ]] || return 1
+  printf '%s\n' "$value"
 }
 
 cf_install_hook() {
@@ -32,15 +34,17 @@ cf_install_hook() {
   } | atomic_write "$ACME_HOME/dnsapi/$hook.sh" 600
 }
 
-cf_configure_profile() {
-  local profile="$1" token account_id
+cf_require_profile_name() {
+  local profile="$1"
   cf_valid_profile "$profile" || {
     error 'Use 1-48 lowercase letters, digits or underscores, starting with a letter or digit; legacy is reserved'
     return 1
   }
-  token=$(prompt_value 'Cloudflare API token (empty cancels)') || return 1
+}
+
+cf_save_profile() {
+  local profile="$1" token="$2" account_id="$3"
   [[ "$token" =~ ^[A-Za-z0-9_-]+$ ]] || { error 'Invalid or empty Cloudflare API token'; return 1; }
-  account_id=$(prompt_value 'Cloudflare account ID (optional)') || return 1
   [[ "$account_id" =~ ^[A-Za-z0-9_-]*$ ]] || { error 'Invalid Cloudflare account ID'; return 1; }
 
   cf_install_hook "$profile" || return 1
@@ -49,15 +53,39 @@ cf_configure_profile() {
   success "Cloudflare Token saved: $profile"
 }
 
-cf_add_profile() {
+cf_configure_profile() {
+  local profile="$1" token account_id
+  cf_require_profile_name "$profile" || return 1
+  token=$(prompt_value 'Cloudflare API token (empty cancels)') || return 1
+  [[ -n "$token" ]] || return 1
+  account_id=$(prompt_value 'Cloudflare account ID (optional)') || return 1
+  cf_save_profile "$profile" "$token" "$account_id"
+}
+
+cf_prompt_new_profile() {
   local profile
   profile=$(prompt_value 'New Token name') || return 1
-  if cf_valid_profile "$profile" && [[ -e "$(cf_profile_dir)/$profile" ]]; then
+  cf_require_profile_name "$profile" || return 1
+  if [[ -e "$(cf_profile_dir)/$profile" ]]; then
     error "Cloudflare Token already exists: $profile"
     return 1
   fi
+  printf '%s\n' "$profile"
+}
+
+cf_add_profile() {
+  local profile
+  profile=$(cf_prompt_new_profile) || return 1
   cf_configure_profile "$profile" >&2 || return 1
   printf '%s\n' "$profile"
+}
+
+cf_import_legacy_profile() {
+  local profile token account_id
+  token=$(cf_legacy_value CF_Token) || { error 'No legacy Cloudflare API Token configured'; return 1; }
+  account_id=$(cf_legacy_value CF_Account_ID) || account_id=''
+  profile=$(cf_prompt_new_profile) || return 1
+  cf_save_profile "$profile" "$token" "$account_id"
 }
 
 cf_select_profile() {
@@ -67,7 +95,7 @@ cf_select_profile() {
     options+=("$profile" "$profile")
   done < <(cf_profiles)
   if [[ -z "$current" ]]; then
-    if cf_has_legacy_token; then
+    if cf_legacy_value CF_Token >/dev/null; then
       current=legacy
     elif (( ${#options[@]} > 2 )); then
       current=__cancel
@@ -107,7 +135,7 @@ cf_prompt_existing_profile() {
     options+=("$profile" "$profile")
   done < <(cf_profiles)
   if (( ${#options[@]} == 2 )); then
-    warn 'No named Cloudflare Tokens configured'
+    warn 'No named Cloudflare Tokens. Choose Add Token or Import legacy Token first.'
     return 1
   fi
   selected=$(prompt_select "Select a Cloudflare Token to $action" __cancel "${options[@]}") || return 1
@@ -155,15 +183,17 @@ cf_menu() {
     ui_menu_item 3 'Update Token'
     ui_menu_item 4 'Remove Token' 'Available for profiles without certificate bindings'
     ui_menu_item 5 'Configure legacy credentials'
+    ui_menu_item 6 'Import legacy Token' 'Save existing credentials under a new name'
     ui_menu_item 0 'Back'
     ui_footer
-    menu_choice 'Choose an action [0-5]:' || return 0
+    menu_choice 'Choose an action [0-6]:' || return 0
     case "$MENU_CHOICE" in
       1) dns_status cloudflare;;
       2) cf_add_profile >/dev/null || true;;
       3) if profile=$(cf_prompt_existing_profile update); then cf_configure_profile "$profile" || true; fi;;
       4) if profile=$(cf_prompt_existing_profile remove); then cf_remove_profile "$profile" || true; fi;;
       5) dns_configure cloudflare || true;;
+      6) cf_import_legacy_profile || true;;
       0) return 0;;
       *) warn 'Invalid choice';;
     esac

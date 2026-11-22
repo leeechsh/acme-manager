@@ -111,6 +111,8 @@ root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生�
 
 在主菜单 `1 Issue certificate` 中选择 Cloudflare 后，可以选已有 Token 或现场新增。通过 `6 DNS API accounts → 4 Manage Cloudflare Tokens` 可以查看、新增、更新和删除命名 Token。删除前，先将仍在使用该 Token 的证书改绑到其他 Token。每张证书使用一套 Token，包括它的全部 SAN 域名。
 
+如果列表只有 `Legacy acme.sh credentials`，选择 `6 Import legacy Token` 并输入新名称。导入会复制已有 Token 和可选 Account ID。现有证书沿用原绑定，需要改绑的证书可在单张续期时选择导入后的名称。
+
 ```bash
 acme-manager dns configure cloudflare work
 acme-manager dns configure cloudflare personal

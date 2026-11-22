@@ -340,6 +340,28 @@ assert_contains "$TMP/cf-remove-menu.txt" 'Cloudflare Token removed: stage'
 [[ ! -e "$ACME_HOME/.acme-manager-cloudflare/stage" ]]
 [[ ! -e "$ACME_HOME/dnsapi/dns_amcf_stage.sh" ]]
 
+IMPORT_HOME="$TMP/import-cf-home"
+mkdir -p "$IMPORT_HOME"
+cat >"$IMPORT_HOME/account.conf" <<'LEGACY_CF'
+CF_Token=''
+SAVED_CF_Token='legacy-import-test-token'
+SAVED_CF_Account_ID='legacy-import-account'
+LEGACY_CF
+cp "$IMPORT_HOME/account.conf" "$TMP/account-before-import"
+printf '6\n4\n1\n6\noffice\n1\n6\noffice\n0\n0\n0\n' |
+  env -u CF_Token -u CF_Account_ID ACME_HOME="$IMPORT_HOME" "$ROOT/acme-manager.sh" menu >"$TMP/cf-import-menu.txt" 2>&1
+assert_contains "$TMP/cf-import-menu.txt" 'None. Choose Add Token or Import legacy Token'
+assert_contains "$TMP/cf-import-menu.txt" 'Token profile: office'
+assert_contains "$TMP/cf-import-menu.txt" 'Cloudflare Token already exists: office'
+[[ "$(cat "$IMPORT_HOME/.acme-manager-cloudflare/office")" == $'legacy-import-test-token\nlegacy-import-account' ]]
+[[ "$(stat -c '%a' "$IMPORT_HOME/.acme-manager-cloudflare/office")" == 600 ]]
+[[ -f "$IMPORT_HOME/dnsapi/dns_amcf_office.sh" ]]
+cmp "$TMP/account-before-import" "$IMPORT_HOME/account.conf"
+if grep -q 'legacy-import-test-token' "$TMP/cf-import-menu.txt"; then
+  echo 'FAIL: imported Cloudflare Token was displayed' >&2
+  exit 1
+fi
+
 "$ROOT/acme-manager.sh" doctor >/dev/null || true
 
 mkdir -p "$TMP/prefix/acme-manager" "$TMP/prefix/bin"
