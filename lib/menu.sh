@@ -132,7 +132,7 @@ main_menu() {
     ui_section 'Certificate Lifecycle'
     ui_menu_item 1 'Issue certificate' 'Issue, then deploy automatically'
     ui_menu_item 2 'List certificates' 'Validity, DNS credentials and deployment paths'
-    ui_menu_item 3 'Renew certificate' 'One certificate or all certificates'
+    ui_menu_item 3 'Renew certificate' 'Scheduled or forced renewal'
     ui_menu_item 4 'Deploy certificate' 'Paths, permissions and reload hook'
     ui_menu_item 5 'Remove / revoke' 'Destructive action; confirmation required'
 
@@ -154,12 +154,7 @@ main_menu() {
     case "$MENU_CHOICE" in
       1) cert_issue_and_deploy || true; pause_screen;;
       2) cert_list || true; pause_screen;;
-      3)
-        local domain
-        domain=$(prompt_value 'Domain (leave empty to renew all)' '')
-        if [[ -n "$domain" ]]; then cert_renew --interactive --domain "$domain" || true; else cert_renew --all || true; fi
-        pause_screen
-        ;;
+      3) cert_renew_interactive || true; pause_screen;;
       4)
         local domain
         domain=$(prompt_value 'Domain')

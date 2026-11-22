@@ -19,6 +19,18 @@ case " $* " in
         'example.com|"ec-256"|*.example.com||LetsEncrypt.org||'
     fi
     ;;
+  *' --renew '*|*' --renew-all '*)
+    case "${FAKE_RENEW_RESULT:-ok}" in
+      skip)
+        if [[ " $* " != *' --force '* ]]; then
+          echo 'Skipping. Next renewal time is: 2026-12-29T21:03:22Z'
+          exit 2
+        fi
+        ;;
+      fail) echo 'fake acme: validation failed' >&2; exit 1;;
+    esac
+    echo "fake acme: $*"
+    ;;
   *)
     original_args="$*"
     if [[ " $* " == *' --remove '* ]] && [[ "${FAKE_REMOVE_FAIL:-0}" == 1 ]]; then
@@ -119,6 +131,26 @@ assert_contains "$FAKE_LOG" '--issue --dns dns_tencent --server letsencrypt --do
 
 "$ROOT/acme-manager.sh" renew --domain example.com --force --key-type ec-256
 assert_contains "$FAKE_LOG" '--renew --domain example.com --ecc --force --home'
+
+mkdir -p "$ACME_HOME/scheduled.example.com_ecc"
+printf "Le_Webroot='dns_cf'\n" >"$ACME_HOME/scheduled.example.com_ecc/scheduled.example.com.conf"
+FAKE_RENEW_RESULT=skip "$ROOT/acme-manager.sh" renew --domain scheduled.example.com >"$TMP/renew-skip.txt" 2>&1
+assert_contains "$TMP/renew-skip.txt" 'Certificate renewal skipped by acme.sh'
+FAKE_RENEW_RESULT=skip "$ROOT/acme-manager.sh" renew --all >"$TMP/renew-all-skip.txt" 2>&1
+assert_contains "$TMP/renew-all-skip.txt" 'Certificate renewal skipped by acme.sh'
+if grep -Eq 'Renewal failed|Certificate renewal failed|Certificate renewal completed' "$TMP"/renew*-skip.txt; then
+  echo 'FAIL: skipped renewal reported as a failure or renewal' >&2
+  exit 1
+fi
+if FAKE_RENEW_RESULT=fail "$ROOT/acme-manager.sh" renew --domain scheduled.example.com >"$TMP/renew-fail.txt" 2>&1; then
+  echo 'FAIL: validation failure should return an error' >&2
+  exit 1
+fi
+assert_contains "$TMP/renew-fail.txt" 'Certificate renewal failed'
+if FAKE_RENEW_RESULT=skip "$ROOT/acme-manager.sh" renew --domain not-issued.example.com >/dev/null 2>&1; then
+  echo 'FAIL: missing renewal record should return an error' >&2
+  exit 1
+fi
 
 printf 'account data\n' >"$ACME_HOME/account.conf"
 mkdir -p "$ACME_HOME/remove.example.com_ecc" "$ACME_HOME/remove.example.com"
@@ -276,9 +308,18 @@ CONF
 "$ROOT/acme-manager.sh" renew --domain work.example.com --key-type ec-256 --cf-profile work >/dev/null
 assert_contains "$WORK_CONF" "Le_Webroot='dns_amcf_work'"
 assert_contains "$WORK_CONF" "Le_RealFullChainPath='/var/cert/work.example.com/fullchain.pem'"
-printf '3\nwork.example.com\n1\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
+printf '3\nwork.example.com\n\n1\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
 assert_contains "$WORK_CONF" "Le_Webroot='dns_amcf_personal'"
 assert_contains "$FAKE_LOG" '--renew --domain work.example.com --home'
+printf '3\nwork.example.com\n2\n\n0\n' |
+  FAKE_RENEW_RESULT=skip "$ROOT/acme-manager.sh" menu >"$TMP/force-menu.txt" 2>&1
+assert_contains "$TMP/force-menu.txt" 'Force renewal now'
+assert_contains "$FAKE_LOG" '--renew --domain work.example.com --force --home'
+cp "$FAKE_LOG" "$TMP/acme-before-force-all"
+printf '3\n\n2\nn\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null 2>&1
+cmp "$TMP/acme-before-force-all" "$FAKE_LOG"
+printf '3\n\n2\ny\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null 2>&1
+assert_contains "$FAKE_LOG" '--renew-all --force --home'
 if "$ROOT/acme-manager.sh" renew --domain work.example.com --cf-profile missing >/dev/null 2>&1; then
   echo 'FAIL: unknown Cloudflare Token profile was accepted' >&2
   exit 1
@@ -414,7 +455,7 @@ fi
 assert_contains "$TMP/provider-no-fallback" 'Tencent DNSPod profile not found: previous'
 assert_contains "$DP_CONF" "Le_Webroot='dns_amdp_shared'"
 cmp "$TMP/acme-before-provider-check" "$FAKE_LOG"
-printf '3\nali.example.com\n1\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
+printf '3\nali.example.com\n\n1\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
 assert_contains "$ALI_CONF" "Le_Webroot='dns_amali_previous'"
 
 cat >"$TMP/dns_tencent.sh" <<'DNS_TENCENT'

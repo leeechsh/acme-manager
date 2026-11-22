@@ -486,7 +486,7 @@ cert_deployment_summary() {
 
 cert_renew() {
   local all=0 force=0 interactive=0 domain='' key_type='' profile='' cf_only=0 conf binding provider current_profile hook
-  local expected_provider='' selected_profile
+  local expected_provider='' selected_profile rc
   while (($#)); do
     case "$1" in
       --all) all=1; shift;;
@@ -555,13 +555,42 @@ cert_renew() {
     fi
   fi
   (( force )) && args+=(--force)
-  if ! run_acme_logged renew "${args[@]}"; then
+  if run_acme_logged renew "${args[@]}"; then
+    notify_event 'Renewal succeeded' "${domain:-all certificates}" 'The renewal command completed.' || true
+    success 'Certificate renewal completed'
+  else
+    rc=$?
+    # acme.sh reserves exit code 2 for RENEW_SKIP.
+    if (( rc == 2 )) && { (( all )) || [[ -f "$conf" ]]; }; then
+      info 'Certificate renewal skipped by acme.sh. See its output for the reason.'
+      return 0
+    fi
     error 'Certificate renewal failed; see the log'
     notify_event 'Renewal failed' "${domain:-all certificates}" "See $(_log_file)." || true
     return 1
   fi
-  notify_event 'Renewal succeeded' "${domain:-all certificates}" 'The renewal command completed.' || true
-  success 'Certificate renewal completed'
+}
+
+cert_renew_interactive() {
+  local domain mode
+  local -a args=()
+  domain=$(prompt_value 'Domain (leave empty to renew all)' '') || return 1
+  mode=$(prompt_select 'Renewal mode' scheduled \
+    scheduled 'Renew when due' \
+    force 'Force renewal now' \
+    cancel 'Cancel') || return 1
+  [[ "$mode" != cancel ]] || return 0
+
+  if [[ -n "$domain" ]]; then
+    args=(--interactive --domain "$domain")
+  else
+    if [[ "$mode" == force ]]; then
+      confirm 'Force renewal for all local acme.sh certificates?' || return 0
+    fi
+    args=(--all)
+  fi
+  [[ "$mode" != force ]] || args+=(--force)
+  cert_renew "${args[@]}"
 }
 
 cert_remove() {
@@ -611,7 +640,7 @@ cert_menu() {
     ui_menu_item 1 'Issue certificate' 'Issue, then deploy automatically'
     ui_menu_item 2 'List certificates' 'Validity, CA and deployment paths'
     ui_menu_item 3 'View certificate details' 'Read native acme.sh information'
-    ui_menu_item 4 'Renew certificate' 'One certificate or all certificates'
+    ui_menu_item 4 'Renew certificate' 'Scheduled or forced renewal'
     ui_menu_item 5 'Check expiry' "Warn ${EXPIRY_DAYS} days before expiry"
     ui_menu_item 6 'Remove / revoke' 'Destructive action; confirmation required'
     ui_menu_item 0 'Back'
@@ -622,7 +651,7 @@ cert_menu() {
       1) cert_issue_and_deploy || true; pause_screen;;
       2) cert_list || true; pause_screen;;
       3) domain=$(prompt_value 'Domain'); cert_info "$domain" || true; pause_screen;;
-      4) domain=$(prompt_value 'Domain (leave empty to renew all)' ''); if [[ -n "$domain" ]]; then cert_renew --interactive --domain "$domain" || true; else cert_renew --all || true; fi; pause_screen;;
+      4) cert_renew_interactive || true; pause_screen;;
       5) cert_expiry_check || true; pause_screen;;
       6)
         cert_remove_interactive || true
