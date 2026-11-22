@@ -462,6 +462,7 @@ cp "$LIST_LOCAL/example.com/cert.pem" "$LIST_REMOTE/example.com/cert.pem"
 ACME_MANAGER_CONFIG="$LIST_CONFIG" ACME_MANAGER_CERT_DIR="$LIST_LOCAL" ACME_HOME="$LIST_ACME" \
   "$ROOT/acme-manager.sh" meta sync >/dev/null
 sed 's/"node_id": "list-host"/"node_id": "other-host"/' "$LIST_LOCAL/meta.json" >"$LIST_REMOTE/meta.json"
+sed -i 's/"expires_at": "[^"]*"/"expires_at": ""/' "$LIST_LOCAL/meta.json"
 
 cat >"$TMP/list-raw" <<'LIST'
 Main_Domain|KeyLength|SAN_Domains|Profile|CA|Created|Renew
@@ -469,6 +470,8 @@ example.com|"ec-256"|*.example.com||LetsEncrypt.org|2026-01-01|2026-03-01
 example.com|"2048"|*.example.com|shortlived|LetsEncrypt.org|2026-01-01|2026-01-04
 dp.example.com|"ec-256"|*.dp.example.com||LetsEncrypt.org|2026-01-01|2026-03-01
 LIST
+printf '#!/bin/sh\nexit 93\n' >"$TMP/bin/column"
+chmod 700 "$TMP/bin/column"
 printf '2\n0\n' | FAKE_NATIVE_LIST="$TMP/list-raw" ACME_MANAGER_CONFIG="$LIST_CONFIG" \
   ACME_MANAGER_CERT_DIR="$LIST_LOCAL" ACME_HOME="$LIST_ACME" \
   "$ROOT/acme-manager.sh" menu >"$TMP/list-credentials"
@@ -479,6 +482,32 @@ assert grep -Eq '^dp\.example\.com[[:space:]].*Tencent DNSPod / legacy[[:space:]
 assert grep -Eq '^Local acme\.sh[[:space:]]+example\.com[[:space:]].*Cloudflare / leeechsh[[:space:]]*$' "$TMP/list-credentials"
 assert grep -Eq '^Local acme\.sh[[:space:]]+dp\.example\.com[[:space:]].*[[:space:]]-[[:space:]]*$' "$TMP/list-credentials"
 assert grep -Eq '^Remote other-host[[:space:]]+example\.com[[:space:]].*[[:space:]]-[[:space:]]*$' "$TMP/list-credentials"
+assert awk '
+  $1 == "Main_Domain" { profile = index($0, "Profile"); native = index($0, "DNS credential") }
+  $1 == "example.com" && /"ec-256"/ {
+    if (index($0, "Cloudflare /") != native || substr($0, profile, 1) != "-") bad = 1
+    native_rows++
+  }
+  $1 == "example.com" && /"2048"/ {
+    if (index($0, "Cloudflare /") != native || index($0, "shortlived") != profile) bad = 1
+    native_rows++
+  }
+  $1 == "Source" && $2 == "Domain" {
+    expires = index($0, "Expires")
+    directory = index($0, "Deployment directory")
+    managed = index($0, "DNS credential")
+  }
+  /^Local acme.sh +example.com / {
+    if (substr($0, expires, 1) != "-" || index($0, "/list-local/example.com") == 0 ||
+        substr($0, directory, 1) != "/" || index($0, "Cloudflare /") != managed) bad = 1
+    managed_rows++
+  }
+  /^Remote other-host +example.com / {
+    if (substr($0, directory, 1) != "/" || substr($0, managed, 1) != "-") bad = 1
+    managed_rows++
+  }
+  END { exit (bad || native_rows != 2 || managed_rows != 2) }
+' "$TMP/list-credentials"
 
 "$ROOT/acme-manager.sh" doctor >/dev/null || true
 

@@ -285,10 +285,9 @@ cert_deployed_list() {
     fi
   )
   if [[ -n "$filtered" ]]; then
-    local table formatted
-    table=$(printf '%s\n%s' 'Source	Domain	Key type	SAN domains	CA	Issued	Expires	Deployment directory	DNS credential' "$filtered")
-    formatted=$(ui_table "$table")
-    printf '%s\n' "$formatted"
+    local table
+    printf -v table 'Source\tDomain\tKey type\tSAN domains\tCA\tIssued\tExpires\tDeployment directory\tDNS credential\n%s' "$filtered"
+    ui_table "$table"
   else
     ui_hint 'No managed certificate metadata found'
   fi
@@ -311,21 +310,18 @@ cert_native_list_rows() {
         ;;
       *) [[ -z "$line" ]] || printf '%s\n' "$line" >&2;;
     esac
-  done <"$1" | awk -F'|' '{for (i=1; i<=NF; i++) printf "%s%s", ($i == "" ? "-" : $i), (i==NF ? "\n" : "\t")}'
+  done <"$1" | tr '|' '\t'
 }
 
 cert_list() {
-  local raw formatted header native_available=0
+  local raw table native_available=0
   raw=$(mktemp "${TMPDIR:-/tmp}/acme-manager-list.XXXXXX") || return 1
   if acme_command >/dev/null 2>&1; then
     native_available=1
     printf '\n%sNative acme.sh certificates (local)%s\n' "$UI_ACCENT" "$UI_RESET"
     if run_acme --list --listraw >"$raw" 2>&1; then
-      formatted=$(cert_native_list_rows "$raw")
-      formatted=$(ui_table "$formatted")
-      header=$(printf '%s\n' "$formatted" | head -1)
-      [[ -n "$header" ]] && printf '%s%s%s\n' "$UI_PRIMARY" "$header" "$UI_RESET"
-      printf '%s\n' "$formatted" | tail -n +2
+      table=$(cert_native_list_rows "$raw")
+      ui_table "$table"
     else
       warn 'Unable to read the native acme.sh certificate list; showing managed files only'
       cat "$raw"

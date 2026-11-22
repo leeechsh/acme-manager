@@ -9,7 +9,7 @@ if [[ -z "${ACME_MANAGER_VERSION:-}" ]]; then
     ACME_MANAGER_VERSION=$(tr -d '[:space:]' <"$ACME_MANAGER_VERSION_FILE")
   fi
 fi
-: "${ACME_MANAGER_VERSION:=1.2.1}"
+: "${ACME_MANAGER_VERSION:=1.2.2}"
 
 UI_RESET=''
 UI_BOLD=''
@@ -86,12 +86,45 @@ ui_hint() {
 }
 
 ui_table() {
-  local input="$1"
-  if command_exists column; then
-    printf '%s\n' "$input" | column -t -s $'\t'
-  else
-    printf '%s\n' "$input"
-  fi
+  local input="$1" row cell width measured line=0 col columns=0
+  local -A cells=() cell_widths=()
+  local -a widths=()
+
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    line=$((line + 1))
+    col=1
+    while true; do
+      # Split on one tab at a time so adjacent delimiters leave empty cells.
+      cell=${row%%$'\t'*}
+      cell=${cell:--}
+      width=${#cell}
+      if [[ "$cell" =~ [^\ -~] ]] && measured=$(printf '%s\n' "$cell" | wc -L 2>/dev/null); then
+        measured=${measured//[[:space:]]/}
+        if [[ "$measured" =~ ^[0-9]+$ ]]; then width=$measured; fi
+      fi
+      cells[$line,$col]=$cell
+      cell_widths[$line,$col]=$width
+      if (( width > ${widths[col]:-0} )); then widths[col]=$width; fi
+      [[ "$row" == *$'\t'* ]] || break
+      row=${row#*$'\t'}
+      col=$((col + 1))
+    done
+    if (( col > columns )); then columns=$col; fi
+  done <<<"$input"
+
+  local row_count=$line
+  for ((line = 1; line <= row_count; line++)); do
+    if (( line == 1 )); then printf '%s' "$UI_PRIMARY"; fi
+    for ((col = 1; col <= columns; col++)); do
+      printf '%s' "${cells[$line,$col]:--}"
+      if (( col < columns )); then
+        printf '%*s' "$((${widths[col]:-1} - ${cell_widths[$line,$col]:-1} + 2))" ''
+      fi
+    done
+    if (( line == 1 )); then printf '%s' "$UI_RESET"; fi
+    printf '\n'
+  done
 }
 
 _now() { date '+%Y-%m-%d %H:%M:%S'; }
