@@ -130,6 +130,8 @@ acme-manager renew --all
 
 命名凭据保存在 `ACME_HOME/.acme-manager-<provider>/` 下权限为 `0600` 的文件中。证书配置记录对应的 acme.sh hook。旧版命名 Cloudflare Token 沿用原存储路径和绑定。旧凭据仍保存在原生 `account.conf`。
 
+`2 List certificates` 和 `acme-manager list` 的 `DNS credential` 列显示服务商与当前续期绑定的名称，例如 `Cloudflare / work` 或 `Tencent DNSPod / legacy`。部署副本通过证书指纹与本机记录匹配。远程同步副本和无法匹配的条目显示 `-`。
+
 ## WebDAV 同步
 
 WebDAV 同步默认关闭。可以在主菜单选择 `10 WebDAV synchronization`，或执行：

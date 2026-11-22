@@ -11,7 +11,14 @@ set -eu
 printf '%s\n' "$*" >> "${FAKE_LOG:?}"
 case " $* " in
   *' --version '*) echo 'https://github.com/acmesh-official/acme.sh 3.1.0';;
-  *' --list '*) echo 'Main_Domain KeyLength SAN_Domains CA'; echo 'example.com ec-256 *.example.com letsencrypt';;
+  *' --list '*)
+    if [[ -n "${FAKE_NATIVE_LIST:-}" ]]; then
+      cat "$FAKE_NATIVE_LIST"
+    else
+      printf '%s\n' 'Main_Domain|KeyLength|SAN_Domains|Profile|CA|Created|Renew' \
+        'example.com|"ec-256"|*.example.com||LetsEncrypt.org||'
+    fi
+    ;;
   *)
     original_args="$*"
     if [[ " $* " == *' --remove '* ]] && [[ "${FAKE_REMOVE_FAIL:-0}" == 1 ]]; then
@@ -428,6 +435,50 @@ if grep -rEq 'dp-test-secret|ali-test-secret|ali-old-secret' "$FAKE_LOG" "$ACME_
   echo 'FAIL: named DNS credentials leaked to logs or manager config' >&2
   exit 1
 fi
+
+LIST_ACME="$TMP/list-acme"
+LIST_LOCAL="$TMP/list-local"
+LIST_REMOTE="$TMP/list-remote"
+LIST_CONFIG="$TMP/list-config"
+mkdir -p "$LIST_ACME/example.com" "$LIST_ACME/example.com_ecc" "$LIST_ACME/dp.example.com_ecc" \
+  "$LIST_LOCAL/example.com" "$LIST_LOCAL/dp.example.com" "$LIST_REMOTE/example.com"
+cat >"$LIST_CONFIG" <<CONF
+AGENT_TARGET_DIR="$LIST_REMOTE"
+WEBDAV_NODE_ID="list-host"
+CONF
+printf "Le_Domain='example.com'\nLe_Webroot='dns_cf'\n" >"$LIST_ACME/example.com/example.com.conf"
+printf "Le_Domain='example.com'\nLe_Webroot='dns_amcf_leeechsh'\n" >"$LIST_ACME/example.com_ecc/example.com.conf"
+printf "Le_Domain='dp.example.com'\nLe_Webroot='dns_tencent'\n" >"$LIST_ACME/dp.example.com_ecc/dp.example.com.conf"
+
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+  -subj '/CN=example.com' -days 1 -keyout "$TMP/list.key" \
+  -out "$LIST_ACME/example.com_ecc/example.com.cer" 2>/dev/null
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+  -subj '/CN=dp.example.com' -days 1 -keyout "$TMP/list-dp.key" \
+  -out "$LIST_ACME/dp.example.com_ecc/dp.example.com.cer" 2>/dev/null
+cp "$LIST_ACME/example.com_ecc/example.com.cer" "$LIST_LOCAL/example.com/cert.pem"
+cp "$LIST_LOCAL/example.com/cert.pem" "$LIST_LOCAL/dp.example.com/cert.pem"
+cp "$LIST_LOCAL/example.com/cert.pem" "$LIST_REMOTE/example.com/cert.pem"
+ACME_MANAGER_CONFIG="$LIST_CONFIG" ACME_MANAGER_CERT_DIR="$LIST_LOCAL" ACME_HOME="$LIST_ACME" \
+  "$ROOT/acme-manager.sh" meta sync >/dev/null
+sed 's/"node_id": "list-host"/"node_id": "other-host"/' "$LIST_LOCAL/meta.json" >"$LIST_REMOTE/meta.json"
+
+cat >"$TMP/list-raw" <<'LIST'
+Main_Domain|KeyLength|SAN_Domains|Profile|CA|Created|Renew
+example.com|"ec-256"|*.example.com||LetsEncrypt.org|2026-01-01|2026-03-01
+example.com|"2048"|*.example.com|shortlived|LetsEncrypt.org|2026-01-01|2026-01-04
+dp.example.com|"ec-256"|*.dp.example.com||LetsEncrypt.org|2026-01-01|2026-03-01
+LIST
+printf '2\n0\n' | FAKE_NATIVE_LIST="$TMP/list-raw" ACME_MANAGER_CONFIG="$LIST_CONFIG" \
+  ACME_MANAGER_CERT_DIR="$LIST_LOCAL" ACME_HOME="$LIST_ACME" \
+  "$ROOT/acme-manager.sh" menu >"$TMP/list-credentials"
+assert_contains "$TMP/list-credentials" 'DNS credential'
+assert grep -Eq '^example\.com[[:space:]].*"ec-256".*Cloudflare / leeechsh[[:space:]]*$' "$TMP/list-credentials"
+assert grep -Eq '^example\.com[[:space:]].*"2048".*Cloudflare / legacy[[:space:]]*$' "$TMP/list-credentials"
+assert grep -Eq '^dp\.example\.com[[:space:]].*Tencent DNSPod / legacy[[:space:]]*$' "$TMP/list-credentials"
+assert grep -Eq '^Local acme\.sh[[:space:]]+example\.com[[:space:]].*Cloudflare / leeechsh[[:space:]]*$' "$TMP/list-credentials"
+assert grep -Eq '^Local acme\.sh[[:space:]]+dp\.example\.com[[:space:]].*[[:space:]]-[[:space:]]*$' "$TMP/list-credentials"
+assert grep -Eq '^Remote other-host[[:space:]]+example\.com[[:space:]].*[[:space:]]-[[:space:]]*$' "$TMP/list-credentials"
 
 "$ROOT/acme-manager.sh" doctor >/dev/null || true
 

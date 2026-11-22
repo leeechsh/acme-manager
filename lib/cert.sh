@@ -10,10 +10,16 @@ cert_key_args() {
   esac
 }
 
+cert_native_home() {
+  local configured
+  configured=$(account_get_var CERT_HOME || true)
+  printf '%s\n' "${configured:-${CERT_HOME:-${LE_CONFIG_HOME:-$ACME_HOME}}}"
+}
+
 cert_native_conf() {
   local domain="$1" key_type="$2" base
-  base="${CERT_HOME:-${LE_CONFIG_HOME:-$ACME_HOME}}/$domain"
-  if [[ "$key_type" == ec-256 || ( -z "$key_type" && ! -d "$base" && -d "${base}_ecc" ) ]]; then
+  base="${3:-$(cert_native_home)}/$domain"
+  if [[ "$key_type" == ec-* || ( -z "$key_type" && ! -d "$base" && -d "${base}_ecc" ) ]]; then
     base+='_ecc'
   fi
   printf '%s/%s.conf\n' "$base" "$domain"
@@ -23,6 +29,43 @@ cert_dns_binding() {
   local hook
   hook=$(meta_conf_value "$1" Le_Webroot) || return 1
   dns_profile_binding "$hook"
+}
+
+cert_dns_credential_label() {
+  local conf="$1" value hook binding provider profile label result='' seen=$'\n'
+  local -a hooks=()
+  value=$(meta_conf_value "$conf" Le_Webroot) || return 1
+  IFS=',' read -r -a hooks <<<"$value"
+  for hook in "${hooks[@]}"; do
+    binding=$(dns_profile_binding "$hook") || continue
+    IFS=$'\t' read -r provider profile <<<"$binding"
+    label="$(dns_label "$provider") / $profile"
+    [[ "$seen" == *$'\n'"$label"$'\n'* ]] && continue
+    seen+="$label"$'\n'
+    result+="${result:+, }$label"
+  done
+  printf '%s\n' "${result:--}"
+}
+
+cert_deployed_credential_label() {
+  local domain="$1" deployed="$2" native_home="$3" alt_domain native_conf native_cert
+  local deployed_fingerprint native_fingerprint label result=''
+  [[ "$domain" =~ ^(\*\.)?[A-Za-z0-9.:_-]+$ && "$domain" != . && "$domain" != .. ]] || return 1
+  deployed_fingerprint=$(openssl x509 -in "$deployed" -noout -fingerprint -sha256 2>/dev/null) || return 1
+  for alt_domain in "$domain" "*.$domain"; do
+    for native_conf in "$native_home/$alt_domain/$alt_domain.conf" "$native_home/${alt_domain}_ecc/$alt_domain.conf"; do
+      [[ -f "$native_conf" ]] || continue
+      native_cert="${native_conf%.conf}.cer"
+      [[ -f "$native_cert" ]] || continue
+      native_fingerprint=$(openssl x509 -in "$native_cert" -noout -fingerprint -sha256 2>/dev/null) || continue
+      [[ "$deployed_fingerprint" == "$native_fingerprint" ]] || continue
+      label=$(cert_dns_credential_label "$native_conf") || continue
+      [[ -z "$result" || "$result" == "$label" ]] || return 1
+      result="$label"
+    done
+  done
+  [[ -n "$result" ]] || return 1
+  printf '%s\n' "$result"
 }
 
 cert_dns_bind() {
@@ -217,7 +260,8 @@ cert_metadata_source() {
 }
 
 cert_deployed_list() {
-  local metadata root rows filtered='' directory row source
+  local metadata root rows filtered='' directory row source domain credential native_home
+  native_home=$(cert_native_home)
   printf '\n%sManaged / synchronized certificate files%s\n' "$UI_ACCENT" "$UI_RESET"
   while IFS=$'\t' read -r metadata root; do
     [[ -f "$metadata" ]] || continue
@@ -227,7 +271,12 @@ cert_deployed_list() {
       directory="${row##*$'\t'}"
       [[ -f "$directory/cert.pem" ]] || continue
       source=$(cert_metadata_source "$metadata" "$directory")
-      filtered+="$source"$'\t'"$row"$'\n'
+      credential='-'
+      if [[ "$source" != Remote\ * ]]; then
+        domain="${row%%$'\t'*}"
+        credential=$(cert_deployed_credential_label "$domain" "$directory/cert.pem" "$native_home") || credential='-'
+      fi
+      filtered+="$source"$'\t'"$row"$'\t'"$credential"$'\n'
     done <<<"$rows"
   done < <(
     printf '%s\t%s\n' "$CERT_DIR/meta.json" "$CERT_DIR"
@@ -237,12 +286,32 @@ cert_deployed_list() {
   )
   if [[ -n "$filtered" ]]; then
     local table formatted
-    table=$(printf '%s\n%s' 'Source	Domain	Key type	SAN domains	CA	Issued	Expires	Deployment directory' "$filtered")
+    table=$(printf '%s\n%s' 'Source	Domain	Key type	SAN domains	CA	Issued	Expires	Deployment directory	DNS credential' "$filtered")
     formatted=$(ui_table "$table")
     printf '%s\n' "$formatted"
   else
     ui_hint 'No managed certificate metadata found'
   fi
+}
+
+cert_native_list_rows() {
+  local native_home line domain key_type conf credential
+  native_home=$(cert_native_home)
+  while IFS= read -r line; do
+    case "$line" in
+      Main_Domain\|*) printf '%s|DNS credential\n' "$line";;
+      *\|*)
+        IFS='|' read -r domain key_type _ <<<"$line"
+        credential='-'
+        if [[ "$domain" =~ ^(\*\.)?[A-Za-z0-9.:_-]+$ && "$domain" != . && "$domain" != .. ]]; then
+          conf=$(cert_native_conf "$domain" "${key_type//\"/}" "$native_home")
+          credential=$(cert_dns_credential_label "$conf") || credential='-'
+        fi
+        printf '%s|%s\n' "$line" "$credential"
+        ;;
+      *) [[ -z "$line" ]] || printf '%s\n' "$line" >&2;;
+    esac
+  done <"$1" | awk -F'|' '{for (i=1; i<=NF; i++) printf "%s%s", ($i == "" ? "-" : $i), (i==NF ? "\n" : "\t")}'
 }
 
 cert_list() {
@@ -251,8 +320,8 @@ cert_list() {
   if acme_command >/dev/null 2>&1; then
     native_available=1
     printf '\n%sNative acme.sh certificates (local)%s\n' "$UI_ACCENT" "$UI_RESET"
-    if run_acme --list >"$raw" 2>&1; then
-      formatted=$(awk 'NF { for (i=1; i<=NF; i++) printf "%s%s", $i, (i==NF ? "\n" : "\t") }' "$raw")
+    if run_acme --list --listraw >"$raw" 2>&1; then
+      formatted=$(cert_native_list_rows "$raw")
       formatted=$(ui_table "$formatted")
       header=$(printf '%s\n' "$formatted" | head -1)
       [[ -n "$header" ]] && printf '%s%s%s\n' "$UI_PRIMARY" "$header" "$UI_RESET"

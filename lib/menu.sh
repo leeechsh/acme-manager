@@ -131,7 +131,7 @@ main_menu() {
 
     ui_section 'Certificate Lifecycle'
     ui_menu_item 1 'Issue certificate' 'Issue, then deploy automatically'
-    ui_menu_item 2 'List certificates' 'Validity, CA and deployment paths'
+    ui_menu_item 2 'List certificates' 'Validity, DNS credentials and deployment paths'
     ui_menu_item 3 'Renew certificate' 'One certificate or all certificates'
     ui_menu_item 4 'Deploy certificate' 'Paths, permissions and reload hook'
     ui_menu_item 5 'Remove / revoke' 'Destructive action; confirmation required'
