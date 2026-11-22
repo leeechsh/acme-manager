@@ -9,7 +9,7 @@ if [[ -z "${ACME_MANAGER_VERSION:-}" ]]; then
     ACME_MANAGER_VERSION=$(tr -d '[:space:]' <"$ACME_MANAGER_VERSION_FILE")
   fi
 fi
-: "${ACME_MANAGER_VERSION:=1.0.1}"
+: "${ACME_MANAGER_VERSION:=1.1.0}"
 
 UI_RESET=''
 UI_BOLD=''
@@ -200,11 +200,12 @@ ensure_parent() { mkdir -p "$(dirname "$1")"; }
 
 atomic_write() {
   local destination="$1" mode="${2:-600}" tmp
-  ensure_parent "$destination"
+  ensure_parent "$destination" || return 1
   tmp=$(mktemp "${destination}.tmp.XXXXXX") || return 1
-  cat >"$tmp"
-  chmod "$mode" "$tmp"
-  mv -f "$tmp" "$destination"
+  if ! { cat >"$tmp" && chmod "$mode" "$tmp" && mv -f "$tmp" "$destination"; }; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }

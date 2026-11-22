@@ -157,7 +157,7 @@ main_menu() {
       3)
         local domain
         domain=$(prompt_value 'Domain (leave empty to renew all)' '')
-        if [[ -n "$domain" ]]; then cert_renew --domain "$domain" || true; else cert_renew --all || true; fi
+        if [[ -n "$domain" ]]; then cert_renew --interactive --domain "$domain" || true; else cert_renew --all || true; fi
         pause_screen
         ;;
       4)

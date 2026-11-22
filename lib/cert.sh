@@ -10,6 +10,39 @@ cert_key_args() {
   esac
 }
 
+cert_native_conf() {
+  local domain="$1" key_type="$2" base
+  base="${CERT_HOME:-${LE_CONFIG_HOME:-$ACME_HOME}}/$domain"
+  if [[ "$key_type" == ec-256 || ( -z "$key_type" && ! -d "$base" && -d "${base}_ecc" ) ]]; then
+    base+='_ecc'
+  fi
+  printf '%s/%s.conf\n' "$base" "$domain"
+}
+
+cert_cf_profile() {
+  local hook
+  hook=$(meta_conf_value "$1" Le_Webroot) || return 1
+  case "$hook" in
+    dns_cf) printf 'legacy\n';;
+    dns_amcf_*)
+      cf_valid_profile "${hook#dns_amcf_}" || return 1
+      printf '%s\n' "${hook#dns_amcf_}"
+      ;;
+    *) return 1;;
+  esac
+}
+
+cert_cf_bind() {
+  local file="$1" hook="$2" updated
+  [[ -f "$file" && ! -L "$file" ]] || { error "Cannot update certificate record: $file"; return 1; }
+  updated=$(awk -v hook="$hook" '
+    /^Le_Webroot=/ { $0 = "Le_Webroot=\047" hook "\047"; count++ }
+    { print }
+    END { if (count != 1) exit 1 }
+  ' "$file") || { error "Invalid DNS hook entry in $file"; return 1; }
+  atomic_write "$file" 600 <<<"$updated"
+}
+
 cert_issue_key_exists() {
   local domain="$1" key_type="$2" stem suffix=''
   stem="${domain#\*.}"
@@ -34,6 +67,7 @@ cert_remove_native_files() {
 
 cert_issue() {
   local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 force=0 wildcard=1 interactive=0 domains=() domain value
+  local cf_profile='' current_profile='' hook
   while (($#)); do
     case "$1" in
       -d|--domain) domains+=("$2"); shift 2;;
@@ -42,6 +76,7 @@ cert_issue() {
       --force) force=1; shift;;
       --interactive) interactive=1; shift;;
       --dns) provider="$2"; shift 2;;
+      --cf-profile) require_arg "$@" || return 2; cf_profile="$2"; shift 2;;
       --ca|--server) ca="$2"; shift 2;;
       --key-type) key_type="$2"; shift 2;;
       --email) email="$2"; shift 2;;
@@ -81,10 +116,21 @@ cert_issue() {
   valid_choice "$provider" cloudflare dnspod aliyun || { error 'Invalid DNS provider'; return 1; }
   valid_choice "$ca" letsencrypt zerossl || { error 'Invalid CA'; return 1; }
   valid_choice "$key_type" ec-256 rsa-2048 rsa-3072 rsa-4096 || { error 'Invalid key type'; return 1; }
+  hook=$(dns_hook "$provider") || return 1
+  if [[ "$provider" == cloudflare ]]; then
+    current_profile=$(cert_cf_profile "$(cert_native_conf "${domains[0]}" "$key_type")") || current_profile=''
+    if (( interactive )) && [[ -z "$cf_profile" ]]; then
+      cf_profile=$(cf_select_profile "$current_profile") || return 1
+    fi
+    hook=$(cf_profile_hook "${cf_profile:-${current_profile:-legacy}}") || return 1
+  elif [[ -n "$cf_profile" ]]; then
+    error '--cf-profile requires the Cloudflare DNS provider'
+    return 2
+  fi
   if [[ -z "$email" && -t 0 ]]; then
     email=$(prompt_value 'Account email (optional)' '')
   fi
-  local args=(--issue --dns "$(dns_hook "$provider")" --server "$ca")
+  local args=(--issue --dns "$hook" --server "$ca")
   for domain in "${domains[@]}"; do args+=(--domain "$domain"); done
   while IFS= read -r value; do args+=("$value"); done < <(cert_key_args "$key_type")
   (( staging )) && args+=(--staging)
@@ -380,12 +426,26 @@ cert_deployment_summary() {
 }
 
 cert_renew() {
-  local all=0 force=0 domain='' key_type=''
+  local all=0 force=0 interactive=0 domain='' key_type='' cf_profile='' conf current_profile hook
   while (($#)); do
-    case "$1" in --all) all=1; shift;; -d|--domain) domain="$2"; shift 2;; --force) force=1; shift;; --key-type) key_type="$2"; shift 2;; *) error "Unknown renew argument: $1"; return 2;; esac
+    case "$1" in
+      --all) all=1; shift;;
+      -d|--domain) require_arg "$@" || return 2; domain="$2"; shift 2;;
+      --force) force=1; shift;;
+      --key-type) require_arg "$@" || return 2; key_type="$2"; shift 2;;
+      --cf-profile) require_arg "$@" || return 2; cf_profile="$2"; shift 2;;
+      --interactive) interactive=1; shift;;
+      *) error "Unknown renew argument: $1"; return 2;;
+    esac
   done
   local args=(--renew)
-  if (( all )); then args=(--renew-all); else valid_domain "$domain" || { error 'renew requires --domain, or use --all'; return 2; }; args+=(--domain "$domain"); fi
+  if (( all )); then
+    [[ -z "$cf_profile" ]] || { error '--cf-profile requires a single --domain'; return 2; }
+    args=(--renew-all)
+  else
+    valid_domain "$domain" || { error 'renew requires --domain, or use --all'; return 2; }
+    args+=(--domain "$domain")
+  fi
   case "$key_type" in
     ec-256) args+=(--ecc);;
     rsa-2048) args+=(--keylength 2048);;
@@ -394,6 +454,22 @@ cert_renew() {
     '') ;;
     *) error 'Invalid key type'; return 2;;
   esac
+  if (( ! all )); then
+    conf=$(cert_native_conf "$domain" "$key_type")
+    if current_profile=$(cert_cf_profile "$conf"); then
+      if (( interactive )) && [[ -z "$cf_profile" ]]; then
+        cf_profile=$(cf_select_profile "$current_profile") || return 1
+      fi
+      hook=$(cf_profile_hook "${cf_profile:-$current_profile}") || return 1
+      if [[ -n "$cf_profile" && "$cf_profile" != "$current_profile" ]]; then
+        cert_cf_bind "$conf" "$hook" || return 1
+        info "Cloudflare renewal Token selected for $domain: $cf_profile"
+      fi
+    elif [[ -n "$cf_profile" ]]; then
+      error "No Cloudflare renewal record found for $domain"
+      return 2
+    fi
+  fi
   (( force )) && args+=(--force)
   if ! run_acme_logged renew "${args[@]}"; then
     error 'Certificate renewal failed; see the log'
@@ -462,7 +538,7 @@ cert_menu() {
       1) cert_issue_and_deploy || true; pause_screen;;
       2) cert_list || true; pause_screen;;
       3) domain=$(prompt_value 'Domain'); cert_info "$domain" || true; pause_screen;;
-      4) domain=$(prompt_value 'Domain (leave empty to renew all)' ''); if [[ -n "$domain" ]]; then cert_renew --domain "$domain" || true; else cert_renew --all || true; fi; pause_screen;;
+      4) domain=$(prompt_value 'Domain (leave empty to renew all)' ''); if [[ -n "$domain" ]]; then cert_renew --interactive --domain "$domain" || true; else cert_renew --all || true; fi; pause_screen;;
       5) cert_expiry_check || true; pause_screen;;
       6)
         cert_remove_interactive || true

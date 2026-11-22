@@ -87,7 +87,7 @@ for file in "$ROOT"/lib/*.sh; do bash -n "$file"; done
 "$ROOT/acme-manager.sh" config write
 [[ -f "$ACME_MANAGER_CONFIG" ]]
 [[ "$(stat -c '%a' "$ACME_MANAGER_CONFIG")" == 600 ]]
-[[ "$("$ROOT/acme-manager.sh" version)" == "ACME Manager 1.0.5" ]]
+[[ "$("$ROOT/acme-manager.sh" version)" == "ACME Manager $(cat "$ROOT/VERSION")" ]]
 
 cat >>"$ACME_MANAGER_CONFIG" <<'INJECT'
 UNTRUSTED='touch /tmp/acme-manager-should-not-exist'
@@ -133,7 +133,7 @@ then
 fi
 [[ ! -e "$ACME_HOME/stale.example.com_ecc" ]]
 
-printf '1\ninteractive.example.com\n1\n1\n1\n\n\n\n\n\n\n0\n' |
+printf '1\ninteractive.example.com\n1\n1\n1\n1\n\n\n\n\n\n\n0\n' |
   "$ROOT/acme-manager.sh" menu >/dev/null
 assert_contains "$FAKE_LOG" '--issue --dns dns_cf --server letsencrypt --domain interactive.example.com --domain *.interactive.example.com --keylength ec-256 --home'
 assert_contains "$FAKE_LOG" '--install-cert -d interactive.example.com --ecc --key-file'
@@ -244,6 +244,81 @@ assert_contains "$ACME_HOME/account.conf" "export CF_Token='token-value'"
 [[ "$(stat -c '%a' "$ACME_HOME/account.conf")" == 600 ]]
 ! grep -Fq token-value "$ACME_MANAGER_CONFIG"
 
+# Add a profile from the issue prompt, then select a second profile by name.
+printf 'work.example.com\n1\n1\n1\n2\nwork\nwork-test-token\nwork-account\n' |
+  "$ROOT/acme-manager.sh" issue --interactive >/dev/null
+assert_contains "$FAKE_LOG" '--issue --dns dns_amcf_work --server letsencrypt --domain work.example.com'
+"$ROOT/acme-manager.sh" dns configure cloudflare personal <<'INPUT'
+personal-test-token
+
+INPUT
+"$ROOT/acme-manager.sh" issue --domain personal.example.com --dns cloudflare --cf-profile personal >/dev/null
+assert_contains "$FAKE_LOG" '--issue --dns dns_amcf_personal --server letsencrypt --domain personal.example.com'
+[[ "$(stat -c '%a' "$ACME_HOME/.acme-manager-cloudflare/work")" == 600 ]]
+"$ROOT/acme-manager.sh" dns status cloudflare >"$TMP/cf-status.txt"
+assert_contains "$TMP/cf-status.txt" 'Token profile: work'
+assert_contains "$TMP/cf-status.txt" 'Token profile: personal'
+
+WORK_CONF="$ACME_HOME/work.example.com_ecc/work.example.com.conf"
+mkdir -p "$(dirname "$WORK_CONF")"
+cat >"$WORK_CONF" <<'CONF'
+Le_Domain='work.example.com'
+Le_Webroot='dns_cf'
+Le_RealFullChainPath='/var/cert/work.example.com/fullchain.pem'
+CONF
+"$ROOT/acme-manager.sh" renew --domain work.example.com --key-type ec-256 --cf-profile work >/dev/null
+assert_contains "$WORK_CONF" "Le_Webroot='dns_amcf_work'"
+assert_contains "$WORK_CONF" "Le_RealFullChainPath='/var/cert/work.example.com/fullchain.pem'"
+printf '3\nwork.example.com\n1\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
+assert_contains "$WORK_CONF" "Le_Webroot='dns_amcf_personal'"
+assert_contains "$FAKE_LOG" '--renew --domain work.example.com --home'
+if "$ROOT/acme-manager.sh" renew --domain work.example.com --cf-profile missing >/dev/null 2>&1; then
+  echo 'FAIL: unknown Cloudflare Token profile was accepted' >&2
+  exit 1
+fi
+assert_contains "$WORK_CONF" "Le_Webroot='dns_amcf_personal'"
+"$ROOT/acme-manager.sh" renew --all >/dev/null
+assert_contains "$FAKE_LOG" '--renew-all --home'
+
+# Exercise both generated hooks with the POSIX shell used by native acme.sh.
+cat >"$TMP/fake-dns-cf.sh" <<'DNS_CF'
+dns_cf_add() {
+  [ "$CF_Token" = "$1" ] && [ "$CF_Account_ID" = "$2" ] &&
+    [ -z "$CF_Zone_ID$CF_Key$CF_Email" ] &&
+    [ -z "$(_readaccountconf_mutable CF_Account_ID)" ] &&
+    _saveaccountconf_mutable CF_Token "$CF_Token" &&
+    _clearaccountconf_mutable CF_Zone_ID && _clearaccountconf CF_Zone_ID
+}
+dns_cf_rm() { dns_cf_add "$@"; }
+DNS_CF
+sh -eu -s "$ACME_HOME" "$TMP/fake-dns-cf.sh" <<'HOOK_TEST'
+LE_WORKING_DIR=$1
+native_hook=$2
+_findHook() { printf '%s\n' "$native_hook"; }
+_err() { printf '%s\n' "$*" >&2; }
+_readaccountconf_mutable() { printf 'legacy-account\n'; }
+_saveaccountconf_mutable() { return 1; }
+_clearaccountconf_mutable() { return 1; }
+_clearaccountconf() { return 1; }
+CF_Token=legacy-token
+CF_Account_ID=legacy-account
+CF_Zone_ID=legacy-zone
+CF_Key=legacy-key
+CF_Email=legacy-email
+. "$LE_WORKING_DIR/dnsapi/dns_amcf_work.sh"
+. "$LE_WORKING_DIR/dnsapi/dns_amcf_personal.sh"
+dns_amcf_work_add work-test-token work-account
+dns_amcf_work_rm work-test-token work-account
+dns_amcf_personal_add personal-test-token ''
+dns_amcf_personal_rm personal-test-token ''
+[ "$CF_Token" = legacy-token ] && [ "$CF_Account_ID" = legacy-account ]
+HOOK_TEST
+assert_contains "$ACME_HOME/account.conf" "export CF_Token='token-value'"
+if grep -rEq 'work-test-token|personal-test-token' "$FAKE_LOG" "$ACME_MANAGER_LOG_DIR" "$ACME_MANAGER_CONFIG"; then
+  echo 'FAIL: named Cloudflare Token leaked to logs or manager config' >&2
+  exit 1
+fi
+
 "$ROOT/acme-manager.sh" doctor >/dev/null || true
 
 mkdir -p "$TMP/prefix/acme-manager" "$TMP/prefix/bin"
@@ -253,6 +328,7 @@ PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" >/dev/null
 [[ -f "$TMP/prefix/acme-manager/acme-manager.sh" ]]
 [[ -f "$TMP/prefix/acme-manager/VERSION" ]]
 [[ -f "$TMP/prefix/acme-manager/lib/agent.sh" ]]
+[[ -f "$TMP/prefix/acme-manager/lib/cloudflare-hook.sh" ]]
 [[ -L "$TMP/prefix/bin/acme-manager" ]]
 [[ "$(readlink "$TMP/prefix/bin/acme-manager")" == "$TMP/prefix/acme-manager/acme-manager.sh" ]]
 [[ ! -e "$TMP/prefix/bin/acme-agent" ]]

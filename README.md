@@ -16,7 +16,7 @@ ACME Manager 是一个 Bash 数字菜单和 CLI 管理层，复用 [acme.sh](htt
 - `--install-cert` 自定义路径以及受控 Reload Hook
 - 部署后生成 `/var/cert/meta.json`，并可将证书目录和元数据上传到 WebDAV
 - 内置 Certificate Agent，其它设备使用同一个 `acme-manager` 主程序拉取元数据和证书
-- DNS 凭据隐藏输入并写入 acme.sh 原生 `account.conf`，文件权限为 `0600`
+- 支持多个命名 Cloudflare Token，按证书绑定并用于自动续期
 - SMTP 配置复用 acme.sh notify hook；配置和测试命令不会把密码写入管理器配置或日志
 - acme.sh 原生 Cron 安装/检查/移除，不创建第二套调度器
 - 白名单配置解析、`doctor`、日志、非交互命令和安装/卸载脚本
@@ -101,13 +101,31 @@ root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生�
 
 升级时，管理器会把旧版本自动生成的 `CERT_DIR="/etc/ssl/acme"` 迁移为 `/var/cert`；用户自定义的其它 `CERT_DIR` 不会被覆盖。
 
-`revoke`、`remove`、删除 DNS 凭据和移除 Cron 都会要求二次确认。命令参数和配置文件不会接收 API 密钥或 SMTP 密码；凭据交给 acme.sh 原生账户配置保存。
+`revoke`、`remove`、删除 DNS 凭据和移除 Cron 都会要求二次确认。API 密钥和 SMTP 密码通过交互输入。命令行的 `--cf-profile` 参数接收名称。
 
 交互菜单会根据终端自动启用配色；在日志重定向、自动化任务或不支持 ANSI 的终端中设置 `NO_COLOR=1` 可关闭颜色，不影响命令行为。
 
 续期事件由 acme.sh 原生 notify hook 处理；签发、部署和手动续期的补充通知使用本机 `curl` 的 SMTP 支持发送。未配置 SMTP 或缺少 `curl` 时，操作本身仍会完成，但日志会记录通知失败。
 
-DNS 凭据使用 acme.sh 插件原生变量：Cloudflare 为 `CF_Token`，腾讯云 DNSPod 为 `Tencent_SecretId` / `Tencent_SecretKey`，阿里云为 `Ali_Key` / `Ali_Secret`。可选的临时令牌和区域参数也会写入同一个 `account.conf`。
+### Cloudflare 多 Token
+
+在主菜单 `1 Issue certificate` 中选择 Cloudflare 后，可以选已有 Token 或现场新增。也可以通过 `6 DNS API accounts` 添加或更新。每张证书使用一套 Token，包括它的全部 SAN 域名。
+
+```bash
+acme-manager dns configure cloudflare work
+acme-manager dns configure cloudflare personal
+acme-manager dns status cloudflare
+acme-manager issue --domain example.com --dns cloudflare --cf-profile work
+acme-manager renew --domain example.com
+acme-manager renew --domain example.com --cf-profile personal
+acme-manager renew --all
+```
+
+签发后，单张续期、批量续期和 acme.sh 原生 Cron 均使用该证书绑定的 Token。通过主菜单 `3 Renew certificate` 续期单张 Cloudflare 证书时，按 Enter 使用现有绑定。另选 Token 会立即更新续期配置，并按正常续期时间执行；命令行可用 `--force` 提前续期。更新同名 Token 可为所有绑定该名称的证书轮换凭据。
+
+旧证书继续使用 `account.conf` 中的原生 `dns_cf` 凭据，可在单张续期时选一个命名 Token 完成切换。新证书使用命令行签发时可用 `--cf-profile NAME` 指定名称，省略时沿用该证书已有的 Cloudflare 配置或原生凭据。`legacy` 表示原生凭据。
+
+命名 Token 和可选 Account ID 保存在 `ACME_HOME/.acme-manager-cloudflare/` 下权限为 `0600` 的文件中。证书配置只记录对应 hook 名称。DNSPod、AliDNS 和旧版 Cloudflare 凭据仍使用原生 `account.conf`。
 
 ## WebDAV 同步
 
