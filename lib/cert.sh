@@ -19,20 +19,13 @@ cert_native_conf() {
   printf '%s/%s.conf\n' "$base" "$domain"
 }
 
-cert_cf_profile() {
+cert_dns_binding() {
   local hook
   hook=$(meta_conf_value "$1" Le_Webroot) || return 1
-  case "$hook" in
-    dns_cf) printf 'legacy\n';;
-    dns_amcf_*)
-      cf_valid_profile "${hook#dns_amcf_}" || return 1
-      printf '%s\n' "${hook#dns_amcf_}"
-      ;;
-    *) return 1;;
-  esac
+  dns_profile_binding "$hook"
 }
 
-cert_cf_bind() {
+cert_dns_bind() {
   local file="$1" hook="$2" updated
   [[ -f "$file" && ! -L "$file" ]] || { error "Cannot update certificate record: $file"; return 1; }
   updated=$(awk -v hook="$hook" '
@@ -67,7 +60,7 @@ cert_remove_native_files() {
 
 cert_issue() {
   local provider="$DEFAULT_DNS" ca="$DEFAULT_CA" key_type="$DEFAULT_KEY_TYPE" email='' staging=0 force=0 wildcard=1 interactive=0 domains=() domain value
-  local cf_profile='' current_profile='' hook
+  local profile='' current_profile='' current_provider='' cf_only=0 hook binding
   while (($#)); do
     case "$1" in
       -d|--domain) domains+=("$2"); shift 2;;
@@ -76,7 +69,10 @@ cert_issue() {
       --force) force=1; shift;;
       --interactive) interactive=1; shift;;
       --dns) provider="$2"; shift 2;;
-      --cf-profile) require_arg "$@" || return 2; cf_profile="$2"; shift 2;;
+      --dns-profile|--cf-profile)
+        require_arg "$@" || return 2
+        if [[ "$1" == --cf-profile ]]; then cf_only=1; else cf_only=0; fi
+        profile="$2"; shift 2;;
       --ca|--server) ca="$2"; shift 2;;
       --key-type) key_type="$2"; shift 2;;
       --email) email="$2"; shift 2;;
@@ -100,10 +96,7 @@ cert_issue() {
     domains+=("*.${domains[0]}")
   fi
   if (( interactive )); then
-    provider=$(prompt_select 'Select a DNS provider' "$provider" \
-      cloudflare 'Cloudflare' \
-      dnspod 'Tencent DNSPod' \
-      aliyun 'Alibaba Cloud DNS') || return 1
+    provider=$(dns_select_provider "$provider") || return 1
     ca=$(prompt_select 'Select a certificate authority' "$ca" \
       letsencrypt "Let's Encrypt" \
       zerossl 'ZeroSSL') || return 1
@@ -116,17 +109,18 @@ cert_issue() {
   valid_choice "$provider" cloudflare dnspod aliyun || { error 'Invalid DNS provider'; return 1; }
   valid_choice "$ca" letsencrypt zerossl || { error 'Invalid CA'; return 1; }
   valid_choice "$key_type" ec-256 rsa-2048 rsa-3072 rsa-4096 || { error 'Invalid key type'; return 1; }
-  hook=$(dns_hook "$provider") || return 1
-  if [[ "$provider" == cloudflare ]]; then
-    current_profile=$(cert_cf_profile "$(cert_native_conf "${domains[0]}" "$key_type")") || current_profile=''
-    if (( interactive )) && [[ -z "$cf_profile" ]]; then
-      cf_profile=$(cf_select_profile "$current_profile") || return 1
-    fi
-    hook=$(cf_profile_hook "${cf_profile:-${current_profile:-legacy}}") || return 1
-  elif [[ -n "$cf_profile" ]]; then
+  if (( cf_only )) && [[ "$provider" != cloudflare ]]; then
     error '--cf-profile requires the Cloudflare DNS provider'
     return 2
   fi
+  if binding=$(cert_dns_binding "$(cert_native_conf "${domains[0]}" "$key_type")"); then
+    IFS=$'\t' read -r current_provider current_profile <<<"$binding"
+    [[ "$current_provider" == "$provider" ]] || current_profile=''
+  fi
+  if (( interactive )) && [[ -z "$profile" ]]; then
+    profile=$(dns_select_profile "$provider" "$current_profile") || return 1
+  fi
+  hook=$(dns_profile_hook "$provider" "${profile:-${current_profile:-legacy}}") || return 1
   if [[ -z "$email" && -t 0 ]]; then
     email=$(prompt_value 'Account email (optional)' '')
   fi
@@ -426,21 +420,24 @@ cert_deployment_summary() {
 }
 
 cert_renew() {
-  local all=0 force=0 interactive=0 domain='' key_type='' cf_profile='' conf current_profile hook
+  local all=0 force=0 interactive=0 domain='' key_type='' profile='' cf_only=0 conf binding provider current_profile hook
   while (($#)); do
     case "$1" in
       --all) all=1; shift;;
       -d|--domain) require_arg "$@" || return 2; domain="$2"; shift 2;;
       --force) force=1; shift;;
       --key-type) require_arg "$@" || return 2; key_type="$2"; shift 2;;
-      --cf-profile) require_arg "$@" || return 2; cf_profile="$2"; shift 2;;
+      --dns-profile|--cf-profile)
+        require_arg "$@" || return 2
+        if [[ "$1" == --cf-profile ]]; then cf_only=1; else cf_only=0; fi
+        profile="$2"; shift 2;;
       --interactive) interactive=1; shift;;
       *) error "Unknown renew argument: $1"; return 2;;
     esac
   done
   local args=(--renew)
   if (( all )); then
-    [[ -z "$cf_profile" ]] || { error '--cf-profile requires a single --domain'; return 2; }
+    [[ -z "$profile" ]] || { error '--dns-profile requires a single --domain'; return 2; }
     args=(--renew-all)
   else
     valid_domain "$domain" || { error 'renew requires --domain, or use --all'; return 2; }
@@ -456,17 +453,22 @@ cert_renew() {
   esac
   if (( ! all )); then
     conf=$(cert_native_conf "$domain" "$key_type")
-    if current_profile=$(cert_cf_profile "$conf"); then
-      if (( interactive )) && [[ -z "$cf_profile" ]]; then
-        cf_profile=$(cf_select_profile "$current_profile") || return 1
+    if binding=$(cert_dns_binding "$conf"); then
+      IFS=$'\t' read -r provider current_profile <<<"$binding"
+      if (( cf_only )) && [[ "$provider" != cloudflare ]]; then
+        error '--cf-profile requires a Cloudflare renewal record'
+        return 2
       fi
-      hook=$(cf_profile_hook "${cf_profile:-$current_profile}") || return 1
-      if [[ -n "$cf_profile" && "$cf_profile" != "$current_profile" ]]; then
-        cert_cf_bind "$conf" "$hook" || return 1
-        info "Cloudflare renewal Token selected for $domain: $cf_profile"
+      if (( interactive )) && [[ -z "$profile" ]]; then
+        profile=$(dns_select_profile "$provider" "$current_profile") || return 1
       fi
-    elif [[ -n "$cf_profile" ]]; then
-      error "No Cloudflare renewal record found for $domain"
+      hook=$(dns_profile_hook "$provider" "${profile:-$current_profile}") || return 1
+      if [[ -n "$profile" && "$profile" != "$current_profile" ]]; then
+        cert_dns_bind "$conf" "$hook" || return 1
+        info "$(dns_label "$provider") renewal profile selected for $domain: $profile"
+      fi
+    elif [[ -n "$profile" ]]; then
+      error "No supported DNS renewal record found for $domain"
       return 2
     fi
   fi

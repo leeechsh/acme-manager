@@ -16,7 +16,7 @@ ACME Manager 是一个 Bash 数字菜单和 CLI 管理层，复用 [acme.sh](htt
 - `--install-cert` 自定义路径以及受控 Reload Hook
 - 部署后生成 `/var/cert/meta.json`，并可将证书目录和元数据上传到 WebDAV
 - 内置 Certificate Agent，其它设备使用同一个 `acme-manager` 主程序拉取元数据和证书
-- 支持多个命名 Cloudflare Token，按证书绑定并用于自动续期
+- Cloudflare、腾讯云 DNSPod 和阿里云 AliDNS 均支持多套命名凭据，按证书绑定并用于自动续期
 - SMTP 配置复用 acme.sh notify hook；配置和测试命令不会把密码写入管理器配置或日志
 - acme.sh 原生 Cron 安装/检查/移除，不创建第二套调度器
 - 白名单配置解析、`doctor`、日志、非交互命令和安装/卸载脚本
@@ -101,33 +101,34 @@ root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生�
 
 升级时，管理器会把旧版本自动生成的 `CERT_DIR="/etc/ssl/acme"` 迁移为 `/var/cert`；用户自定义的其它 `CERT_DIR` 不会被覆盖。
 
-`revoke`、`remove`、删除 DNS 凭据和移除 Cron 都会要求二次确认。API 密钥和 SMTP 密码通过交互输入。命令行的 `--cf-profile` 参数接收名称。
+`revoke`、`remove`、删除 DNS 凭据和移除 Cron 都会要求二次确认。API 密钥和 SMTP 密码通过交互输入。命令行的 `--dns-profile` 参数接收名称。
 
 交互菜单会根据终端自动启用配色；在日志重定向、自动化任务或不支持 ANSI 的终端中设置 `NO_COLOR=1` 可关闭颜色，不影响命令行为。
 
 续期事件由 acme.sh 原生 notify hook 处理；签发、部署和手动续期的补充通知使用本机 `curl` 的 SMTP 支持发送。未配置 SMTP 或缺少 `curl` 时，操作本身仍会完成，但日志会记录通知失败。
 
-### Cloudflare 多 Token
+### DNS 命名凭据
 
-在主菜单 `1 Issue certificate` 中选择 Cloudflare 后，可以选已有 Token 或现场新增。通过 `6 DNS API accounts → 4 Manage Cloudflare Tokens` 可以查看、新增、更新和删除命名 Token。删除前，先将仍在使用该 Token 的证书改绑到其他 Token。每张证书使用一套 Token，包括它的全部 SAN 域名。
+在主菜单 `6 DNS API accounts` 中先选服务商，再进入统一的凭据菜单，支持查看、新增、更新、删除和导入。三家服务商可各自保存多套凭据，也可以使用相同的名称。删除正在使用的条目前，先给相关证书改绑。
 
-如果列表只有 `Legacy acme.sh credentials`，选择 `6 Import legacy Token` 并输入新名称。导入会复制已有 Token 和可选 Account ID。现有证书沿用原绑定，需要改绑的证书可在单张续期时选择导入后的名称。
+`6 Import legacy credentials` 会把当前服务商的旧凭据复制到新名称。现有证书继续使用原绑定，可在单张续期时选用导入后的配置。
 
 ```bash
 acme-manager dns configure cloudflare work
-acme-manager dns configure cloudflare personal
-acme-manager dns status cloudflare
-acme-manager issue --domain example.com --dns cloudflare --cf-profile work
+acme-manager dns configure dnspod work
+acme-manager dns configure aliyun work
+acme-manager dns status dnspod
+acme-manager issue --domain example.com --dns dnspod --dns-profile work
 acme-manager renew --domain example.com
-acme-manager renew --domain example.com --cf-profile personal
+acme-manager renew --domain example.com --dns-profile work
 acme-manager renew --all
 ```
 
-签发后，单张续期、批量续期和 acme.sh 原生 Cron 均使用该证书绑定的 Token。通过主菜单 `3 Renew certificate` 续期单张 Cloudflare 证书时，按 Enter 使用现有绑定。另选 Token 会立即更新续期配置，并按正常续期时间执行；命令行可用 `--force` 提前续期。更新同名 Token 可为所有绑定该名称的证书轮换凭据。
+交互式签发会在选择服务商后提示选用或新增凭据，每张证书的所有 SAN 域名共用一套凭据。续期时默认使用该证书绑定的凭据，单张续期可改选同一家服务商下的其他条目。改绑会立即保存，供手动续期、批量续期和 acme.sh 原生 Cron 使用。
 
-旧证书继续使用 `account.conf` 中的原生 `dns_cf` 凭据，可在单张续期时选一个命名 Token 完成切换。新证书使用命令行签发时可用 `--cf-profile NAME` 指定名称，省略时沿用该证书已有的 Cloudflare 配置或原生凭据。`legacy` 表示原生凭据。
+命令行使用 `--dns-profile NAME` 指定名称，`legacy` 表示原生凭据。旧的 Cloudflare `--cf-profile NAME` 参数仍可用。
 
-命名 Token 和可选 Account ID 保存在 `ACME_HOME/.acme-manager-cloudflare/` 下权限为 `0600` 的文件中。证书配置只记录对应 hook 名称。DNSPod、AliDNS 和旧版 Cloudflare 凭据仍使用原生 `account.conf`。
+命名凭据保存在 `ACME_HOME/.acme-manager-<provider>/` 下权限为 `0600` 的文件中。证书配置记录对应的 acme.sh hook。旧版命名 Cloudflare Token 沿用原存储路径和绑定。旧凭据仍保存在原生 `account.conf`。
 
 ## WebDAV 同步
 
@@ -137,7 +138,7 @@ WebDAV 同步默认关闭。可以在主菜单选择 `10 WebDAV synchronization`
 acme-manager webdav configure
 ```
 
-管理器配置文件 `/usr/local/acme-manager/etc/config.conf` 保存 WebDAV 地址、用户名和密码，文件权限为 `0600`。WebDAV 是管理器自有功能，因此不会把 `WEBDAV_PASSWORD` 写入 `.acme.sh/account.conf`。DNS API 凭据和 acme.sh 使用的 SMTP 凭据仍保存在 `.acme.sh/account.conf`，这是 acme.sh 插件的原生要求。配置示例：
+管理器配置文件 `/usr/local/acme-manager/etc/config.conf` 保存 WebDAV 地址、用户名和密码，文件权限为 `0600`。旧版 DNS API 凭据和 acme.sh 使用的 SMTP 凭据保存在 `.acme.sh/account.conf`。配置示例：
 
 ```text
 WEBDAV_ENABLED="true"

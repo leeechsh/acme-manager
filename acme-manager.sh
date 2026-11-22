@@ -16,8 +16,8 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/ca.sh"
 # shellcheck source=lib/dns.sh
 source "$SCRIPT_DIR/lib/dns.sh"
-# shellcheck source=lib/cloudflare.sh
-source "$SCRIPT_DIR/lib/cloudflare.sh"
+# shellcheck source=lib/dns-profiles.sh
+source "$SCRIPT_DIR/lib/dns-profiles.sh"
 # shellcheck source=lib/webdav.sh
 source "$SCRIPT_DIR/lib/webdav.sh"
 # shellcheck source=lib/meta.sh
@@ -53,10 +53,10 @@ Interactive:
 Certificates:
   issue --domain example.com [--domain '*.example.com'] [--no-wildcard] [--force] [--dns cloudflare]
         [--ca letsencrypt|zerossl] [--key-type ec-256|rsa-2048|rsa-3072|rsa-4096]
-        [--email ops@example.com] [--staging] [--cf-profile NAME]
+        [--email ops@example.com] [--staging] [--dns-profile NAME]
   list                              List native and synchronized certificates
   info --domain example.com         Show certificate details
-  renew --domain example.com [--force] [--key-type ...] [--cf-profile NAME]
+  renew --domain example.com [--force] [--key-type ...] [--dns-profile NAME]
   renew --all [--force]
   deploy --domain example.com [--target-dir /var/cert/example.com]
          [--key-file ...] [--fullchain-file ...] [--ca-file ...] [--cert-file ...]
@@ -67,7 +67,8 @@ Certificates:
 
 Accounts and system:
   dns status|configure|remove [provider]
-  dns configure cloudflare NAME     Add or update a named Cloudflare Token
+  dns configure|remove PROVIDER NAME
+                                   Manage a named DNS credential profile
   ca default|register|show [ca] [email]
   notify status|configure|test
   cron status|install|remove
@@ -110,8 +111,8 @@ command_dispatch() {
         status) dns_status "${1:-$DEFAULT_DNS}";;
         configure) dns_configure "${1:-$DEFAULT_DNS}" "${2:-}";;
         remove)
-          [[ $# -le 1 ]] || { error 'Usage: dns remove [provider]'; return 2; }
-          dns_remove "${1:-$DEFAULT_DNS}"
+          [[ $# -le 2 ]] || { error 'Usage: dns remove [provider] [profile]'; return 2; }
+          dns_remove "${1:-$DEFAULT_DNS}" "${2:-}"
           ;;
         *) error 'Usage: dns status|configure|remove'; return 2;;
       esac;;

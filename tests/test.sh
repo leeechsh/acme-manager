@@ -256,8 +256,8 @@ INPUT
 assert_contains "$FAKE_LOG" '--issue --dns dns_amcf_personal --server letsencrypt --domain personal.example.com'
 [[ "$(stat -c '%a' "$ACME_HOME/.acme-manager-cloudflare/work")" == 600 ]]
 "$ROOT/acme-manager.sh" dns status cloudflare >"$TMP/cf-status.txt"
-assert_contains "$TMP/cf-status.txt" 'Token profile: work'
-assert_contains "$TMP/cf-status.txt" 'Token profile: personal'
+assert_contains "$TMP/cf-status.txt" 'Profile: work'
+assert_contains "$TMP/cf-status.txt" 'Profile: personal'
 
 WORK_CONF="$ACME_HOME/work.example.com_ecc/work.example.com.conf"
 mkdir -p "$(dirname "$WORK_CONF")"
@@ -319,23 +319,23 @@ if grep -rEq 'work-test-token|personal-test-token' "$FAKE_LOG" "$ACME_MANAGER_LO
   exit 1
 fi
 
-printf '6\n4\n1\n2\nstage\nstage-test-token\n\n0\n0\n0\n' |
+printf '6\n1\n1\n2\nstage\nstage-test-token\n\n0\n0\n0\n' |
   "$ROOT/acme-manager.sh" menu >"$TMP/cf-add-menu.txt" 2>&1
-assert_contains "$TMP/cf-add-menu.txt" 'Manage Cloudflare Tokens'
-assert_contains "$TMP/cf-add-menu.txt" 'Token profile: work'
-assert_contains "$TMP/cf-add-menu.txt" 'Token profile: personal'
+assert_contains "$TMP/cf-add-menu.txt" 'Cloudflare Manage DNS credentials'
+assert_contains "$TMP/cf-add-menu.txt" 'Profile: work'
+assert_contains "$TMP/cf-add-menu.txt" 'Profile: personal'
 [[ -s "$ACME_HOME/.acme-manager-cloudflare/stage" ]]
 
-printf '6\n2\n1\n3\n3\nstage-rotated-token\n\n0\n0\n0\n' |
+printf '6\n1\n3\n3\nstage-rotated-token\n\n0\n0\n0\n' |
   "$ROOT/acme-manager.sh" menu >"$TMP/cf-update-menu.txt" 2>&1
-assert_contains "$TMP/cf-update-menu.txt" 'Cloudflare Token saved: stage'
+assert_contains "$TMP/cf-update-menu.txt" 'Cloudflare profile saved: stage'
 [[ "$(head -n 1 "$ACME_HOME/.acme-manager-cloudflare/stage")" == stage-rotated-token ]]
 
-printf '6\n4\n4\n2\n4\n3\ny\n0\n0\n0\n' |
+printf '6\n1\n4\n2\n4\n3\ny\n0\n0\n0\n' |
   "$ROOT/acme-manager.sh" menu >"$TMP/cf-remove-menu.txt" 2>&1
-assert_contains "$TMP/cf-remove-menu.txt" 'Cloudflare Token is used by a certificate: personal'
+assert_contains "$TMP/cf-remove-menu.txt" 'DNS profile is used by a certificate: personal'
 assert_contains "$TMP/cf-remove-menu.txt" 'work.example.com_ecc/work.example.com.conf'
-assert_contains "$TMP/cf-remove-menu.txt" 'Cloudflare Token removed: stage'
+assert_contains "$TMP/cf-remove-menu.txt" 'Cloudflare profile removed: stage'
 [[ -s "$ACME_HOME/.acme-manager-cloudflare/personal" ]]
 [[ ! -e "$ACME_HOME/.acme-manager-cloudflare/stage" ]]
 [[ ! -e "$ACME_HOME/dnsapi/dns_amcf_stage.sh" ]]
@@ -348,17 +348,84 @@ SAVED_CF_Token='legacy-import-test-token'
 SAVED_CF_Account_ID='legacy-import-account'
 LEGACY_CF
 cp "$IMPORT_HOME/account.conf" "$TMP/account-before-import"
-printf '6\n4\n1\n6\noffice\n1\n6\noffice\n0\n0\n0\n' |
+printf '6\n1\n1\n6\noffice\n1\n6\noffice\n0\n0\n0\n' |
   env -u CF_Token -u CF_Account_ID ACME_HOME="$IMPORT_HOME" "$ROOT/acme-manager.sh" menu >"$TMP/cf-import-menu.txt" 2>&1
-assert_contains "$TMP/cf-import-menu.txt" 'None. Choose Add Token or Import legacy Token'
-assert_contains "$TMP/cf-import-menu.txt" 'Token profile: office'
-assert_contains "$TMP/cf-import-menu.txt" 'Cloudflare Token already exists: office'
+assert_contains "$TMP/cf-import-menu.txt" 'None. Choose Add profile or Import legacy credentials'
+assert_contains "$TMP/cf-import-menu.txt" 'Profile: office'
+assert_contains "$TMP/cf-import-menu.txt" 'DNS profile already exists: office'
 [[ "$(cat "$IMPORT_HOME/.acme-manager-cloudflare/office")" == $'legacy-import-test-token\nlegacy-import-account' ]]
 [[ "$(stat -c '%a' "$IMPORT_HOME/.acme-manager-cloudflare/office")" == 600 ]]
 [[ -f "$IMPORT_HOME/dnsapi/dns_amcf_office.sh" ]]
 cmp "$TMP/account-before-import" "$IMPORT_HOME/account.conf"
 if grep -q 'legacy-import-test-token' "$TMP/cf-import-menu.txt"; then
   echo 'FAIL: imported Cloudflare Token was displayed' >&2
+  exit 1
+fi
+
+# The same profile name can be used independently for different DNS providers.
+printf '6\n2\n2\nshared\ndp-id\ndp-test-secret\n\ndp-region\n1\n0\n0\n0\n' |
+  "$ROOT/acme-manager.sh" menu >"$TMP/dp-profile-menu.txt" 2>&1
+assert_contains "$TMP/dp-profile-menu.txt" 'Tencent DNSPod profile saved: shared'
+assert_contains "$TMP/dp-profile-menu.txt" 'Profile: shared'
+"$ROOT/acme-manager.sh" dns configure aliyun shared <<'ALI'
+ali-id
+ali-test-secret
+
+ALI
+printf '6\n3\n6\nprevious\n0\n0\n0\n' |
+  Ali_Key=ali-old-id Ali_Secret=ali-old-secret "$ROOT/acme-manager.sh" menu >"$TMP/ali-import-menu.txt" 2>&1
+assert_contains "$TMP/ali-import-menu.txt" 'Alibaba Cloud DNS profile saved: previous'
+
+"$ROOT/acme-manager.sh" issue --domain dp.example.com --dns dnspod --dns-profile shared >/dev/null
+assert_contains "$FAKE_LOG" '--issue --dns dns_amdp_shared --server letsencrypt --domain dp.example.com'
+printf 'ali.example.com\n3\n1\n1\n2\n' | "$ROOT/acme-manager.sh" issue --interactive >/dev/null
+assert_contains "$FAKE_LOG" '--issue --dns dns_amali_shared --server letsencrypt --domain ali.example.com'
+
+mkdir -p "$ACME_HOME/dp.example.com_ecc" "$ACME_HOME/ali.example.com_ecc"
+DP_CONF="$ACME_HOME/dp.example.com_ecc/dp.example.com.conf"
+ALI_CONF="$ACME_HOME/ali.example.com_ecc/ali.example.com.conf"
+printf "Le_Webroot='dns_tencent'\n" >"$DP_CONF"
+printf "Le_Webroot='dns_amali_shared'\n" >"$ALI_CONF"
+"$ROOT/acme-manager.sh" renew --domain dp.example.com --dns-profile shared >/dev/null
+assert_contains "$DP_CONF" "Le_Webroot='dns_amdp_shared'"
+printf '3\nali.example.com\n1\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
+assert_contains "$ALI_CONF" "Le_Webroot='dns_amali_previous'"
+
+cat >"$TMP/dns_tencent.sh" <<'DNS_TENCENT'
+dns_tencent_add() {
+  [ "$Tencent_SecretId" = dp-id ] && [ "$Tencent_SecretKey" = dp-test-secret ] &&
+    [ -z "$Tencent_SessionToken" ] && [ "$Tencent_Region" = dp-region ] &&
+    [ -z "$(_readaccountconf_mutable Tencent_SecretKey)" ] &&
+    _saveaccountconf_mutable Tencent_SecretKey "$Tencent_SecretKey"
+}
+dns_tencent_rm() { dns_tencent_add "$@"; }
+DNS_TENCENT
+cat >"$TMP/dns_ali.sh" <<'DNS_ALI'
+dns_ali_add() {
+  [ "$Ali_Key" = ali-id ] && [ "$Ali_Secret" = ali-test-secret ] && [ -z "$Ali_SecurityToken" ] &&
+    [ -z "$(_readaccountconf_mutable Ali_Secret)" ] &&
+    _saveaccountconf_mutable Ali_Secret "$Ali_Secret"
+}
+dns_ali_rm() { dns_ali_add "$@"; }
+DNS_ALI
+sh -eu -s "$ACME_HOME" "$TMP" <<'HOOK_TEST'
+LE_WORKING_DIR=$1
+native_hooks=$2
+_findHook() { printf '%s/%s.sh\n' "$native_hooks" "$3"; }
+_err() { printf '%s\n' "$*" >&2; }
+_readaccountconf_mutable() { printf 'legacy-credential\n'; }
+_saveaccountconf_mutable() { return 1; }
+export Tencent_SessionToken=legacy-session Ali_SecurityToken=legacy-security
+. "$LE_WORKING_DIR/dnsapi/dns_amdp_shared.sh"
+. "$LE_WORKING_DIR/dnsapi/dns_amali_shared.sh"
+dns_amdp_shared_add
+dns_amdp_shared_rm
+dns_amali_shared_add
+dns_amali_shared_rm
+[ "$Tencent_SessionToken" = legacy-session ] && [ "$Ali_SecurityToken" = legacy-security ]
+HOOK_TEST
+if grep -rEq 'dp-test-secret|ali-test-secret|ali-old-secret' "$FAKE_LOG" "$ACME_MANAGER_LOG_DIR" "$ACME_MANAGER_CONFIG"; then
+  echo 'FAIL: named DNS credentials leaked to logs or manager config' >&2
   exit 1
 fi
 
@@ -371,7 +438,7 @@ PREFIX="$TMP/prefix" CONFIG_DIR="$TMP/config" sh "$ROOT/install.sh" >/dev/null
 [[ -f "$TMP/prefix/acme-manager/acme-manager.sh" ]]
 [[ -f "$TMP/prefix/acme-manager/VERSION" ]]
 [[ -f "$TMP/prefix/acme-manager/lib/agent.sh" ]]
-[[ -f "$TMP/prefix/acme-manager/lib/cloudflare-hook.sh" ]]
+[[ -f "$TMP/prefix/acme-manager/lib/dns-profile-hook.sh" ]]
 [[ -L "$TMP/prefix/bin/acme-manager" ]]
 [[ "$(readlink "$TMP/prefix/bin/acme-manager")" == "$TMP/prefix/acme-manager/acme-manager.sh" ]]
 [[ ! -e "$TMP/prefix/bin/acme-agent" ]]

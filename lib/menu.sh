@@ -137,7 +137,7 @@ main_menu() {
     ui_menu_item 5 'Remove / revoke' 'Destructive action; confirmation required'
 
     ui_section 'Accounts & Notifications'
-    ui_menu_item 6 'DNS API accounts' 'Cloudflare Tokens / DNSPod / AliDNS'
+    ui_menu_item 6 'DNS API accounts' 'Credential profiles for Cloudflare / DNSPod / AliDNS'
     ui_menu_item 7 'Certificate authorities' "Let's Encrypt / ZeroSSL"
     ui_menu_item 8 'Auto renewal' 'View, install or remove Cron'
     ui_menu_item 9 'Email notifications' 'SMTP configuration and test email'
