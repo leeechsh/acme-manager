@@ -49,8 +49,19 @@ cf_configure_profile() {
   success "Cloudflare Token saved: $profile"
 }
 
+cf_add_profile() {
+  local profile
+  profile=$(prompt_value 'New Token name') || return 1
+  if cf_valid_profile "$profile" && [[ -e "$(cf_profile_dir)/$profile" ]]; then
+    error "Cloudflare Token already exists: $profile"
+    return 1
+  fi
+  cf_configure_profile "$profile" >&2 || return 1
+  printf '%s\n' "$profile"
+}
+
 cf_select_profile() {
-  local current="$1" mode="${2:-use}" profile selected
+  local current="$1" profile selected
   local -a options=()
   while IFS= read -r profile; do
     options+=("$profile" "$profile")
@@ -70,25 +81,9 @@ cf_select_profile() {
   selected=$(prompt_select 'Select a Cloudflare Token' "$current" "${options[@]}") || return 1
   case "$selected" in
     __cancel) return 1;;
-    __new)
-      selected=$(prompt_value 'New Token name') || return 1
-      if cf_valid_profile "$selected" && [[ -e "$(cf_profile_dir)/$selected" ]]; then
-        error "Cloudflare Token already exists: $selected"
-        return 1
-      fi
-      cf_configure_profile "$selected" >&2 || return 1
-      ;;
-    *)
-      if [[ "$mode" == configure ]]; then
-        if [[ "$selected" == legacy ]]; then
-          dns_configure cloudflare >&2 || return 1
-        else
-          cf_configure_profile "$selected" >&2 || return 1
-        fi
-      fi
-      ;;
+    __new) cf_add_profile;;
+    *) printf '%s\n' "$selected";;
   esac
-  printf '%s\n' "$selected"
 }
 
 cf_profile_hook() {
@@ -103,4 +98,75 @@ cf_profile_hook() {
   fi
   cf_install_hook "$profile" || return 1
   printf 'dns_amcf_%s\n' "$profile"
+}
+
+cf_prompt_existing_profile() {
+  local action="$1" profile selected
+  local -a options=(__cancel 'Cancel')
+  while IFS= read -r profile; do
+    options+=("$profile" "$profile")
+  done < <(cf_profiles)
+  if (( ${#options[@]} == 2 )); then
+    warn 'No named Cloudflare Tokens configured'
+    return 1
+  fi
+  selected=$(prompt_select "Select a Cloudflare Token to $action" __cancel "${options[@]}") || return 1
+  [[ "$selected" != __cancel ]] || return 1
+  printf '%s\n' "$selected"
+}
+
+cf_profile_bindings() {
+  local profile="$1" cert_home conf webroot
+  cert_home=$(account_get_var CERT_HOME || true)
+  cert_home="${cert_home:-${CERT_HOME:-${LE_CONFIG_HOME:-$ACME_HOME}}}"
+  for conf in "$cert_home"/*/*.conf; do
+    [[ -f "$conf" ]] || continue
+    webroot=$(meta_conf_value "$conf" Le_Webroot) || return 1
+    if [[ ",$webroot," == *",dns_amcf_$profile,"* ]]; then
+      printf '%s\n' "${conf#"${cert_home%/}/"}"
+    fi
+  done
+}
+
+cf_remove_profile() {
+  local profile="$1" file bindings
+  cf_valid_profile "$profile" || { error 'Invalid Cloudflare Token name'; return 1; }
+  file="$(cf_profile_dir)/$profile"
+  [[ -f "$file" ]] || { error "Cloudflare Token profile not found: $profile"; return 1; }
+  bindings=$(cf_profile_bindings "$profile") || return 1
+  if [[ -n "$bindings" ]]; then
+    error "Cloudflare Token is used by a certificate: $profile"
+    printf '%s\n' "$bindings" >&2
+    printf 'Choose another Token for these certificates in Renew certificate first.\n' >&2
+    return 1
+  fi
+  confirm "Remove Cloudflare Token $profile?" || return 1
+  rm -f -- "$file" "$ACME_HOME/dnsapi/dns_amcf_$profile.sh" || return 1
+  success "Cloudflare Token removed: $profile"
+}
+
+cf_menu() {
+  local profile
+  while true; do
+    menu_header 'Cloudflare Tokens' 'Manage named DNS credentials'
+    ui_section 'Actions'
+    ui_menu_item 1 'List Token profiles' 'Names and legacy credential status'
+    ui_menu_item 2 'Add Token'
+    ui_menu_item 3 'Update Token'
+    ui_menu_item 4 'Remove Token' 'Available for profiles without certificate bindings'
+    ui_menu_item 5 'Configure legacy credentials'
+    ui_menu_item 0 'Back'
+    ui_footer
+    menu_choice 'Choose an action [0-5]:' || return 0
+    case "$MENU_CHOICE" in
+      1) dns_status cloudflare;;
+      2) cf_add_profile >/dev/null || true;;
+      3) if profile=$(cf_prompt_existing_profile update); then cf_configure_profile "$profile" || true; fi;;
+      4) if profile=$(cf_prompt_existing_profile remove); then cf_remove_profile "$profile" || true; fi;;
+      5) dns_configure cloudflare || true;;
+      0) return 0;;
+      *) warn 'Invalid choice';;
+    esac
+    pause_screen
+  done
 }

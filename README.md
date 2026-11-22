@@ -109,7 +109,7 @@ root 用户的默认部署目录为 `/var/cert/<domain>/`，每次部署会生�
 
 ### Cloudflare 多 Token
 
-在主菜单 `1 Issue certificate` 中选择 Cloudflare 后，可以选已有 Token 或现场新增。也可以通过 `6 DNS API accounts` 添加或更新。每张证书使用一套 Token，包括它的全部 SAN 域名。
+在主菜单 `1 Issue certificate` 中选择 Cloudflare 后，可以选已有 Token 或现场新增。通过 `6 DNS API accounts → 4 Manage Cloudflare Tokens` 可以查看、新增、更新和删除命名 Token。删除前，先将仍在使用该 Token 的证书改绑到其他 Token。每张证书使用一套 Token，包括它的全部 SAN 域名。
 
 ```bash
 acme-manager dns configure cloudflare work

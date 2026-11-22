@@ -319,6 +319,27 @@ if grep -rEq 'work-test-token|personal-test-token' "$FAKE_LOG" "$ACME_MANAGER_LO
   exit 1
 fi
 
+printf '6\n4\n1\n2\nstage\nstage-test-token\n\n0\n0\n0\n' |
+  "$ROOT/acme-manager.sh" menu >"$TMP/cf-add-menu.txt" 2>&1
+assert_contains "$TMP/cf-add-menu.txt" 'Manage Cloudflare Tokens'
+assert_contains "$TMP/cf-add-menu.txt" 'Token profile: work'
+assert_contains "$TMP/cf-add-menu.txt" 'Token profile: personal'
+[[ -s "$ACME_HOME/.acme-manager-cloudflare/stage" ]]
+
+printf '6\n2\n1\n3\n3\nstage-rotated-token\n\n0\n0\n0\n' |
+  "$ROOT/acme-manager.sh" menu >"$TMP/cf-update-menu.txt" 2>&1
+assert_contains "$TMP/cf-update-menu.txt" 'Cloudflare Token saved: stage'
+[[ "$(head -n 1 "$ACME_HOME/.acme-manager-cloudflare/stage")" == stage-rotated-token ]]
+
+printf '6\n4\n4\n2\n4\n3\ny\n0\n0\n0\n' |
+  "$ROOT/acme-manager.sh" menu >"$TMP/cf-remove-menu.txt" 2>&1
+assert_contains "$TMP/cf-remove-menu.txt" 'Cloudflare Token is used by a certificate: personal'
+assert_contains "$TMP/cf-remove-menu.txt" 'work.example.com_ecc/work.example.com.conf'
+assert_contains "$TMP/cf-remove-menu.txt" 'Cloudflare Token removed: stage'
+[[ -s "$ACME_HOME/.acme-manager-cloudflare/personal" ]]
+[[ ! -e "$ACME_HOME/.acme-manager-cloudflare/stage" ]]
+[[ ! -e "$ACME_HOME/dnsapi/dns_amcf_stage.sh" ]]
+
 "$ROOT/acme-manager.sh" doctor >/dev/null || true
 
 mkdir -p "$TMP/prefix/acme-manager" "$TMP/prefix/bin"

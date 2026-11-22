@@ -89,9 +89,10 @@ dns_menu() {
     ui_menu_item 1 'View credential status' 'Only configured / missing is shown'
     ui_menu_item 2 'Configure / update' 'Cloudflare / DNSPod / Alibaba Cloud DNS'
     ui_menu_item 3 'Remove credentials' 'Cloudflare legacy credentials / DNSPod / Alibaba Cloud DNS'
+    ui_menu_item 4 'Manage Cloudflare Tokens' 'List, add, update or remove named Tokens'
     ui_menu_item 0 'Back'
     ui_footer
-    menu_choice 'Choose an action [0-3]:' || return 0
+    menu_choice 'Choose an action [0-4]:' || return 0
     local provider
     case "$MENU_CHOICE" in
       1)
@@ -108,10 +109,9 @@ dns_menu() {
           dnspod 'Tencent DNSPod' \
           aliyun 'Alibaba Cloud DNS') || true
         case "$provider" in
-          cloudflare) cf_select_profile '' configure >/dev/null || true;;
-          dnspod|aliyun) dns_configure "$provider" || true;;
+          cloudflare) cf_menu;;
+          dnspod|aliyun) dns_configure "$provider" || true; pause_screen;;
         esac
-        pause_screen
         ;;
       3)
         provider=$(prompt_select 'Select a DNS provider' "$DEFAULT_DNS" \
@@ -121,6 +121,7 @@ dns_menu() {
         [[ -n "${provider:-}" ]] && dns_remove "$provider" || true
         pause_screen
         ;;
+      4) cf_menu;;
       0) return 0;; *) warn 'Invalid choice';;
     esac
   done
