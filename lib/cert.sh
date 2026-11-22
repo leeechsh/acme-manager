@@ -486,12 +486,14 @@ cert_deployment_summary() {
 
 cert_renew() {
   local all=0 force=0 interactive=0 domain='' key_type='' profile='' cf_only=0 conf binding provider current_profile hook
+  local expected_provider='' selected_profile
   while (($#)); do
     case "$1" in
       --all) all=1; shift;;
       -d|--domain) require_arg "$@" || return 2; domain="$2"; shift 2;;
       --force) force=1; shift;;
       --key-type) require_arg "$@" || return 2; key_type="$2"; shift 2;;
+      --dns) require_arg "$@" || return 2; expected_provider="$2"; shift 2;;
       --dns-profile|--cf-profile)
         require_arg "$@" || return 2
         if [[ "$1" == --cf-profile ]]; then cf_only=1; else cf_only=0; fi
@@ -500,9 +502,23 @@ cert_renew() {
       *) error "Unknown renew argument: $1"; return 2;;
     esac
   done
+  if (( cf_only )); then
+    [[ -z "$expected_provider" || "$expected_provider" == cloudflare ]] || {
+      error '--cf-profile requires --dns cloudflare when --dns is specified'
+      return 2
+    }
+    expected_provider=cloudflare
+  fi
+  if [[ -n "$expected_provider" ]] && ! valid_choice "$expected_provider" cloudflare dnspod aliyun; then
+    error "Invalid DNS provider: $expected_provider"
+    return 2
+  fi
   local args=(--renew)
   if (( all )); then
-    [[ -z "$profile" ]] || { error '--dns-profile requires a single --domain'; return 2; }
+    [[ -z "$profile" && -z "$expected_provider" ]] || {
+      error '--dns and --dns-profile require a single --domain'
+      return 2
+    }
     args=(--renew-all)
   else
     valid_domain "$domain" || { error 'renew requires --domain, or use --all'; return 2; }
@@ -520,19 +536,20 @@ cert_renew() {
     conf=$(cert_native_conf "$domain" "$key_type")
     if binding=$(cert_dns_binding "$conf"); then
       IFS=$'\t' read -r provider current_profile <<<"$binding"
-      if (( cf_only )) && [[ "$provider" != cloudflare ]]; then
-        error '--cf-profile requires a Cloudflare renewal record'
+      if [[ -n "$expected_provider" && "$provider" != "$expected_provider" ]]; then
+        error "DNS provider mismatch for $domain: expected $expected_provider, configured $provider"
         return 2
       fi
       if (( interactive )) && [[ -z "$profile" ]]; then
         profile=$(dns_select_profile "$provider" "$current_profile") || return 1
       fi
-      hook=$(dns_profile_hook "$provider" "${profile:-$current_profile}") || return 1
-      if [[ -n "$profile" && "$profile" != "$current_profile" ]]; then
+      selected_profile="${profile:-$current_profile}"
+      hook=$(dns_profile_hook "$provider" "$selected_profile") || return 1
+      if [[ "$selected_profile" != "$current_profile" ]]; then
         cert_dns_bind "$conf" "$hook" || return 1
-        info "$(dns_label "$provider") renewal profile selected for $domain: $profile"
       fi
-    elif [[ -n "$profile" ]]; then
+      info "Renewal DNS credential for $domain: $(dns_label "$provider") / $selected_profile"
+    elif [[ -n "$profile" || -n "$expected_provider" ]]; then
       error "No supported DNS renewal record found for $domain"
       return 2
     fi

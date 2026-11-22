@@ -57,6 +57,7 @@ Certificates:
   list                              List native and synchronized certificates
   info --domain example.com         Show certificate details
   renew --domain example.com [--force] [--key-type ...] [--dns-profile NAME]
+        [--dns cloudflare|dnspod|aliyun]   Require the certificate's existing DNS provider
   renew --all [--force]
   deploy --domain example.com [--target-dir /var/cert/example.com]
          [--key-file ...] [--fullchain-file ...] [--ca-file ...] [--cert-file ...]

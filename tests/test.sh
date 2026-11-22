@@ -379,6 +379,10 @@ ali-id
 ali-test-secret
 
 ALI
+"$ROOT/acme-manager.sh" dns configure cloudflare shared <<'CF'
+cf-shared-test-token
+
+CF
 printf '6\n3\n6\nprevious\n0\n0\n0\n' |
   Ali_Key=ali-old-id Ali_Secret=ali-old-secret "$ROOT/acme-manager.sh" menu >"$TMP/ali-import-menu.txt" 2>&1
 assert_contains "$TMP/ali-import-menu.txt" 'Alibaba Cloud DNS profile saved: previous'
@@ -393,8 +397,23 @@ DP_CONF="$ACME_HOME/dp.example.com_ecc/dp.example.com.conf"
 ALI_CONF="$ACME_HOME/ali.example.com_ecc/ali.example.com.conf"
 printf "Le_Webroot='dns_tencent'\n" >"$DP_CONF"
 printf "Le_Webroot='dns_amali_shared'\n" >"$ALI_CONF"
-"$ROOT/acme-manager.sh" renew --domain dp.example.com --dns-profile shared >/dev/null
+"$ROOT/acme-manager.sh" renew --domain dp.example.com --dns-profile shared >"$TMP/dp-renew-profile"
 assert_contains "$DP_CONF" "Le_Webroot='dns_amdp_shared'"
+assert_contains "$TMP/dp-renew-profile" 'Tencent DNSPod / shared'
+"$ROOT/acme-manager.sh" renew --domain dp.example.com --dns dnspod --dns-profile shared >/dev/null
+cp "$FAKE_LOG" "$TMP/acme-before-provider-check"
+if "$ROOT/acme-manager.sh" renew --domain dp.example.com --dns cloudflare --dns-profile shared >"$TMP/provider-mismatch" 2>&1; then
+  echo 'FAIL: renewal accepted a mismatched DNS provider' >&2
+  exit 1
+fi
+assert_contains "$TMP/provider-mismatch" 'expected cloudflare, configured dnspod'
+if "$ROOT/acme-manager.sh" renew --domain dp.example.com --dns-profile previous >"$TMP/provider-no-fallback" 2>&1; then
+  echo 'FAIL: renewal reused a profile from a different DNS provider' >&2
+  exit 1
+fi
+assert_contains "$TMP/provider-no-fallback" 'Tencent DNSPod profile not found: previous'
+assert_contains "$DP_CONF" "Le_Webroot='dns_amdp_shared'"
+cmp "$TMP/acme-before-provider-check" "$FAKE_LOG"
 printf '3\nali.example.com\n1\n0\n' | "$ROOT/acme-manager.sh" menu >/dev/null
 assert_contains "$ALI_CONF" "Le_Webroot='dns_amali_previous'"
 
@@ -431,7 +450,7 @@ dns_amali_shared_add
 dns_amali_shared_rm
 [ "$Tencent_SessionToken" = legacy-session ] && [ "$Ali_SecurityToken" = legacy-security ]
 HOOK_TEST
-if grep -rEq 'dp-test-secret|ali-test-secret|ali-old-secret' "$FAKE_LOG" "$ACME_MANAGER_LOG_DIR" "$ACME_MANAGER_CONFIG"; then
+if grep -rEq 'cf-shared-test-token|dp-test-secret|ali-test-secret|ali-old-secret' "$FAKE_LOG" "$ACME_MANAGER_LOG_DIR" "$ACME_MANAGER_CONFIG"; then
   echo 'FAIL: named DNS credentials leaked to logs or manager config' >&2
   exit 1
 fi

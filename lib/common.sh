@@ -9,7 +9,7 @@ if [[ -z "${ACME_MANAGER_VERSION:-}" ]]; then
     ACME_MANAGER_VERSION=$(tr -d '[:space:]' <"$ACME_MANAGER_VERSION_FILE")
   fi
 fi
-: "${ACME_MANAGER_VERSION:=1.2.2}"
+: "${ACME_MANAGER_VERSION:=1.2.3}"
 
 UI_RESET=''
 UI_BOLD=''

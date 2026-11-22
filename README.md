@@ -120,13 +120,13 @@ acme-manager dns configure aliyun work
 acme-manager dns status dnspod
 acme-manager issue --domain example.com --dns dnspod --dns-profile work
 acme-manager renew --domain example.com
-acme-manager renew --domain example.com --dns-profile work
+acme-manager renew --domain example.com --dns dnspod --dns-profile work
 acme-manager renew --all
 ```
 
 交互式签发会在选择服务商后提示选用或新增凭据，每张证书的所有 SAN 域名共用一套凭据。续期时默认使用该证书绑定的凭据，单张续期可改选同一家服务商下的其他条目。改绑会立即保存，供手动续期、批量续期和 acme.sh 原生 Cron 使用。
 
-命令行使用 `--dns-profile NAME` 指定名称，`legacy` 表示原生凭据。旧的 Cloudflare `--cf-profile NAME` 参数仍可用。
+命令行使用 `--dns-profile NAME` 在该证书当前的服务商下查找凭据，`legacy` 表示原生凭据。单张续期可用 `--dns PROVIDER` 校验服务商，服务商不符时终止。旧的 Cloudflare `--cf-profile NAME` 参数仍可用。
 
 命名凭据保存在 `ACME_HOME/.acme-manager-<provider>/` 下权限为 `0600` 的文件中。证书配置记录对应的 acme.sh hook。旧版命名 Cloudflare Token 沿用原存储路径和绑定。旧凭据仍保存在原生 `account.conf`。
 
